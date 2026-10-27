@@ -1,0 +1,61 @@
+# AiA Job Alerts
+
+Daily job leads for the people Charly helps find work. Each person signs in with Google at
+**https://jobs.afrikanerinamerika.com** and sees only their own leads; Charly signs in as admin and sees everyone.
+
+Plan: [AiA Job Alerts - Plan](https://claude.ai/artifact/AN8wK3TUKUhzbAypkn21Pi). Concept and ground rules:
+"AiA Job Alerts - Concept and Process.md" in the AiAJobAlerts Drive folder.
+
+| Folder | What |
+| --- | --- |
+| `web/` | Phone web app (React + Vite PWA), deployed to GitHub Pages by `.github/workflows/deploy.yml` |
+| `supabase/migrations/` | Database tables and access rules, run in order in the Supabase SQL editor |
+| `supabase/seed.private.sql` | The real people and admins. **Never committed** (`*.private.*` is gitignored): this repo is public |
+
+## Phase 0 setup (Charly)
+
+These steps need passwords or secret keys, so Charly does them. Do them in this order.
+
+### 1. Supabase project
+1. https://supabase.com/dashboard → **New project**. Name `job-alerts`, region **East US (North Virginia)**,
+   a strong database password (save it in your password manager; nothing in the app needs it).
+2. **SQL Editor** → New query → paste all of `supabase/migrations/0001_init.sql` → **Run**.
+3. New query → paste all of `supabase/seed.private.sql` (on the Mac in `~/Projects/GIT/job-alerts/supabase/`) → **Run**.
+4. **Project Settings → API keys**: note the **Project URL** and the **publishable** key (starts `sb_publishable_`).
+   Never the secret key.
+
+### 2. Tell the app where its database is
+GitHub → charlysfdc/job-alerts → **Settings → Secrets and variables → Actions → Variables** tab → **New repository variable**:
+- `SUPABASE_URL` = the Project URL
+- `SUPABASE_PUBLISHABLE_KEY` = the publishable key
+
+Then **Actions → Deploy to GitHub Pages → Run workflow** (or ask Claude to re-run it).
+
+### 3. Google sign-in
+1. https://console.cloud.google.com → project picker → **New project** `AiA Job Alerts`.
+2. **Google Auth Platform → Branding**: app name `AiA Job Alerts`, support email afrikanerinamerika@gmail.com,
+   developer contact the same. Authorized domain: `supabase.co`.
+3. **Audience**: External → **Publish app** (In production). The app only asks for name and email, so Google
+   needs no review.
+4. **Clients → Create client** → Web application, name `job-alerts web`:
+   - Authorized JavaScript origins: `https://jobs.afrikanerinamerika.com`
+   - Authorized redirect URIs: `https://<project-ref>.supabase.co/auth/v1/callback`
+     (the Project URL from step 1 plus `/auth/v1/callback`)
+   - Copy the **Client ID** and **Client secret**.
+5. Supabase → **Authentication → Sign In / Providers → Google**: turn on, paste Client ID and secret, **Save**.
+6. Supabase → **Authentication → URL Configuration**:
+   - Site URL: `https://jobs.afrikanerinamerika.com`
+   - Redirect URLs: add `https://jobs.afrikanerinamerika.com/**`
+
+### 4. Check (phase 0 is done when both pass)
+- Open https://jobs.afrikanerinamerika.com, sign in with afrikanerinamerika@gmail.com → the **People** page lists
+  everyone from the seed file (any unconfirmed email is marked "Email to confirm").
+- Sign out, sign in with any other Google account → "not on the AiA Job Alerts list".
+
+## Adding a person
+Supabase SQL editor:
+```sql
+insert into people (name, email, email_confirmed, home_base, drive_folder_id, schedule, run_at)
+values ('Full Name', 'their@gmail.com', true, 'City TX zip', '<drive folder id>', 'daily', '07:15');
+```
+Phase 1 replaces this with a form on the admin page.
