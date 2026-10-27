@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+// An unset GitHub repository variable arrives as '' (not undefined), so test for empty too.
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || undefined
+const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || undefined
 
 export const supabaseConfigured = Boolean(url && anonKey)
 
