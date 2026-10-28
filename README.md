@@ -52,10 +52,11 @@ Then **Actions → Deploy to GitHub Pages → Run workflow** (or ask Claude to r
   everyone from the seed file (any unconfirmed email is marked "Email to confirm").
 - Sign out, sign in with any other Google account → "not on the AiA Job Alerts list".
 
+## Phase 1: profiles
+`supabase/migrations/0002_profiles.sql` adds profiles, job families, applications and the TO CONFIRM list (admin-only).
+`supabase/profiles.private.sql` (gitignored) imported the three Master Job Profile Docs on 27 Oct 2026. From then on the
+app is the source of truth: edit profiles on each person's page, not in the old Docs.
+
 ## Adding a person
-Supabase SQL editor:
-```sql
-insert into people (name, email, email_confirmed, home_base, drive_folder_id, schedule, run_at)
-values ('Full Name', 'their@gmail.com', true, 'City TX zip', '<drive folder id>', 'daily', '07:15');
-```
-Phase 1 replaces this with a form on the admin page.
+Admin page → **Add a person**: name, the Gmail address they sign in with, home base, Drive folder link. They get an
+empty profile and three starter TO CONFIRM questions (work authorisation, pay floor, commute and remote).
