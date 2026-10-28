@@ -38,9 +38,11 @@ function fromDraft(f: Field, d: Draft): unknown {
   }
 }
 
-/** Text that still holds an open question stands out. */
+/** The words TO CONFIRM stand out wherever an open question sits inside longer text. */
 export function Flagged({ text }: { text: string }) {
-  return /TO CONFIRM/i.test(text) ? <span className="flagged">{text}</span> : <>{text}</>
+  const parts = text.split(/(TO CONFIRM(?: WITH [A-Z]+)?)/i)
+  if (parts.length === 1) return <>{text}</>
+  return <>{parts.map((p, i) => (i % 2 ? <span key={i} className="flagged">{p}</span> : p))}</>
 }
 
 function View({ f, v }: { f: Field; v: unknown }) {
