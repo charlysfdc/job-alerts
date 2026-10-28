@@ -144,7 +144,7 @@ main.wide { max-width: 1080px; }
 .chip-ok { background: var(--ok-bg); color: var(--ok); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
 .stats dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
-.stats dd { margin: 2px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stats dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
 .ask-text { color: var(--ask); }
 .hero-links { display: flex; gap: 18px; margin: 14px 0 0; }
 @media (min-width: 720px) { .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); } }

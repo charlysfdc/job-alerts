@@ -109,9 +109,11 @@ function whereLine(p: Profile) {
 
 function payLine(p: Profile) {
   const floors = [p.pay_floor_annual ? `${money(p.pay_floor_annual)}/yr` : null, p.pay_floor_hourly ? `${money(p.pay_floor_hourly)}/hr` : null].filter(Boolean)
-  if (floors.length) return `Floor ${floors.join(' or ')}`
-  if (p.pay_note && /TO CONFIRM/i.test(p.pay_note) && !/\$\d/.test(p.pay_note)) return 'TO CONFIRM'
-  return p.pay_note ? 'Targets, no hard floor' : 'Not set'
+  const note = p.pay_note ?? ''
+  const open = /TO CONFIRM/i.test(note)
+  let line = floors.length ? `Floor ${floors.join(' or ')}` : /\$\d/.test(note) ? 'Targets, no hard floor' : open ? '' : 'Not set'
+  if (open) line = line ? `${line} · TO CONFIRM` : 'TO CONFIRM'
+  return line
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
