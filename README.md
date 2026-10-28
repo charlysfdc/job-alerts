@@ -60,3 +60,13 @@ app is the source of truth: edit profiles on each person's page, not in the old 
 ## Adding a person
 Admin page → **Add a person**: name, the Gmail address they sign in with, home base, Drive folder link. They get an
 empty profile and three starter TO CONFIRM questions (work authorisation, pay floor, commute and remote).
+
+## The job seeker's view
+Job seekers never read the tables. Their app (home, questions, profile in plain words, applications) comes from one
+database function, `person_view` / `my_view`, that leaves out the coach's notes; they act through `answer_question`,
+`send_request` and `add_my_application`. Coaches open **See their view** on a profile to preview it.
+
+Built for a later self sign-up with no coach:
+- `people.coach_email` empty = no coach. Answers to field-linked questions then save straight into the profile.
+- `question_templates` give every new person their starter questions (a database trigger, not the page).
+- Self sign-up mainly means changing `handle_new_user` to create a `people` row instead of refusing unknown accounts.
