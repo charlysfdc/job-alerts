@@ -107,81 +107,111 @@ const HINTS: Partial<Record<Field['kind'], string>> = {
   paragraphs: 'Leave a blank line between items.',
 }
 
-interface SectionProps {
+interface FieldsProps {
+  fields: Field[]
+  values: Values
+  onSave: (patch: Values) => Promise<string | null>
+  /** When given, the parent owns the editing state (e.g. an Edit button in a header). */
+  editing?: boolean
+  onEditingChange?: (editing: boolean) => void
+  /** Show nothing but the form: the parent shows its own read-only view. */
+  formOnly?: boolean
+}
+
+/** A block of fields that reads as a list and turns into a form on Edit. */
+export function Fields({ fields, values, onSave, editing, onEditingChange, formOnly }: FieldsProps) {
+  const [ownEditing, setOwnEditing] = useState(false)
+  const isEditing = editing ?? ownEditing
+  const setEditing = (b: boolean) => (onEditingChange ? onEditingChange(b) : setOwnEditing(b))
+  const [draft, setDraft] = useState<Record<string, Draft> | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // a fresh draft each time editing starts
+  const current = isEditing ? draft ?? Object.fromEntries(fields.map((f) => [f.key, toDraft(f, values[f.key])])) : null
+
+  const stop = () => {
+    setDraft(null)
+    setError(null)
+    setEditing(false)
+  }
+
+  const save = async () => {
+    if (!current) return
+    setSaving(true)
+    const patch = Object.fromEntries(fields.map((f) => [f.key, fromDraft(f, current[f.key])]))
+    const e = await onSave(patch)
+    setSaving(false)
+    if (e) setError(e)
+    else stop()
+  }
+
+  if (current) {
+    return (
+      <div className="form">
+        {fields.map((f) => (
+          <div key={f.key} className="field">
+            <span className="field-label">{f.label}</span>
+            <Input f={f} d={current[f.key]} set={(d) => setDraft({ ...current, [f.key]: d })} />
+            {(f.hint || HINTS[f.kind]) && <span className="field-hint">{f.hint ?? HINTS[f.kind]}</span>}
+          </div>
+        ))}
+        {error && <p className="error">{error}</p>}
+        <div className="actions">
+          <button className="primary small-btn" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          <button className="secondary" onClick={stop} disabled={saving}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+  if (formOnly) return null
+  return (
+    <div className="fields">
+      {editing === undefined && <button className="link fields-edit" onClick={() => setEditing(true)}>Edit</button>}
+      <dl className="facts">
+        {fields.map((f) => (
+          <div key={f.key} className="fact">
+            <dt>{f.label}</dt>
+            <dd><View f={f} v={values[f.key]} /></dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+interface ItemProps {
   title: ReactNode
   fields: Field[]
   values: Values
   onSave: (patch: Values) => Promise<string | null>
   /** Shown beside the Edit button (e.g. move up/down). */
   tools?: ReactNode
-  /** When set, the section starts folded and shows this line instead of its fields. */
-  summary?: ReactNode
+  /** One line shown while folded. */
+  summary: ReactNode
   muted?: boolean
 }
 
-export function Section({ title, fields, values, onSave, tools, summary, muted }: SectionProps) {
-  const [open, setOpen] = useState(summary === undefined)
-  const [draft, setDraft] = useState<Record<string, Draft> | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const edit = () => {
-    setDraft(Object.fromEntries(fields.map((f) => [f.key, toDraft(f, values[f.key])])))
-    setOpen(true)
-    setError(null)
-  }
-
-  const save = async () => {
-    if (!draft) return
-    setSaving(true)
-    const patch = Object.fromEntries(fields.map((f) => [f.key, fromDraft(f, draft[f.key])]))
-    const e = await onSave(patch)
-    setSaving(false)
-    if (e) setError(e)
-    else setDraft(null)
-  }
-
+/** A foldable row inside a module (e.g. one job family). */
+export function Item({ title, fields, values, onSave, tools, summary, muted }: ItemProps) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   return (
-    <section className={muted ? 'card section section-muted' : 'card section'}>
-      <div className="section-head">
-        {summary !== undefined && !draft ? (
-          <button className="section-title as-button" onClick={() => setOpen(!open)} aria-expanded={open}>
-            <span className="caret">{open ? '▾' : '▸'}</span> {title}
-          </button>
-        ) : (
-          <h2 className="section-title">{title}</h2>
+    <div className={muted ? 'item item-muted' : 'item'}>
+      <div className="item-head">
+        <button className="item-title" onClick={() => setOpen(!open)} aria-expanded={open || editing}>
+          <span className="caret" aria-hidden>{open || editing ? '▾' : '▸'}</span>
+          <span>{title}</span>
+        </button>
+        {!editing && (
+          <span className="item-tools">
+            {tools}
+            <button className="link" onClick={() => { setEditing(true); setOpen(true) }}>Edit</button>
+          </span>
         )}
-        <span className="section-tools">
-          {!draft && tools}
-          {!draft && <button className="link" onClick={edit}>Edit</button>}
-        </span>
       </div>
-      {!open && !draft && summary}
-      {draft ? (
-        <div className="form">
-          {fields.map((f) => (
-            <div key={f.key} className="field">
-              <span className="field-label">{f.label}</span>
-              <Input f={f} d={draft[f.key]} set={(d) => setDraft({ ...draft, [f.key]: d })} />
-              {(f.hint || HINTS[f.kind]) && <span className="field-hint">{f.hint ?? HINTS[f.kind]}</span>}
-            </div>
-          ))}
-          {error && <p className="error">{error}</p>}
-          <div className="actions">
-            <button className="primary small-btn" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-            <button className="secondary" onClick={() => setDraft(null)} disabled={saving}>Cancel</button>
-          </div>
-        </div>
-      ) : open ? (
-        <dl className="facts">
-          {fields.map((f) => (
-            <div key={f.key} className="fact">
-              <dt>{f.label}</dt>
-              <dd><View f={f} v={values[f.key]} /></dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-    </section>
+      {!open && !editing && <div className="item-summary">{summary}</div>}
+      {(open || editing) && <Fields fields={fields} values={values} onSave={onSave} editing={editing} onEditingChange={setEditing} />}
+    </div>
   )
 }

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { Section, type Field } from '../components/Section'
+import { Fields, Flagged, Item, type Field } from '../components/Section'
+import { Module, setAllModules } from '../components/Module'
 import { ToConfirmCard } from '../components/ToConfirmCard'
 import { Applications } from '../components/Applications'
 import {
-  EMPLOYMENT, REMOTE, SCHEDULES, WORK_AUTH,
+  APP_STATUS, EMPLOYMENT, REMOTE, SCHEDULES, WORK_AUTH,
   type Application, type JobFamily, type Person, type Profile, type ToConfirm,
 } from '../lib/types'
 
@@ -89,11 +90,38 @@ async function load(id: string): Promise<Loaded> {
 
 const NEXT_LETTER = (fams: JobFamily[]) => String.fromCharCode(65 + fams.length)
 
+const money = (n: number) => `$${n.toLocaleString('en-US')}`
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+}
+
+function shortDate(iso: string | null) {
+  return iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+}
+
+/** "Remote first · 45 min drive" */
+function whereLine(p: Profile) {
+  const parts = [REMOTE[p.remote] ?? p.remote]
+  if (p.max_commute_minutes) parts.push(`${p.max_commute_minutes} min drive`)
+  return parts.join(' · ')
+}
+
+function payLine(p: Profile) {
+  const floors = [p.pay_floor_annual ? `${money(p.pay_floor_annual)}/yr` : null, p.pay_floor_hourly ? `${money(p.pay_floor_hourly)}/hr` : null].filter(Boolean)
+  if (floors.length) return `Floor ${floors.join(' or ')}`
+  if (p.pay_note && /TO CONFIRM/i.test(p.pay_note) && !/\$\d/.test(p.pay_note)) return 'TO CONFIRM'
+  return p.pay_note ? 'Targets, no hard floor' : 'Not set'
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
 export function PersonPage() {
   const { id = '' } = useParams()
   const { me } = useAuth()
   const [data, setData] = useState<Loaded | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editingCore, setEditingCore] = useState(false)
 
   const reload = useCallback(() => {
     load(id).then(setData).catch((e: Error) => setError(e.message))
@@ -133,51 +161,129 @@ export function PersonPage() {
 
   const docUrl = profile?.source_doc_id ? `https://docs.google.com/document/d/${profile.source_doc_id}/edit` : null
   const folderUrl = person.drive_folder_id ? `https://drive.google.com/drive/folders/${person.drive_folder_id}` : null
+  const open = toConfirm.filter((t) => !t.resolved_at)
+  const active = families.filter((f) => f.active)
+  const live = applications.filter((a) => a.status !== 'closed')
+  const values = profile as unknown as Record<string, unknown>
+  const authFlag = !profile || profile.work_authorization === 'to_confirm'
 
   return (
-    <main>
+    <main className="wide">
       <Link className="back" to="/">‹ People</Link>
-      <h1>{person.name}</h1>
-      <p className="muted small">
-        {person.home_base ?? 'No home base'} · {SCHEDULES[person.schedule] ?? person.schedule}
-        {folderUrl && <> · <a href={folderUrl} target="_blank" rel="noreferrer">Drive folder</a></>}
-        {docUrl && <> · <a href={docUrl} target="_blank" rel="noreferrer">Old profile Doc</a></>}
-      </p>
 
-      <ToConfirmCard personId={id} items={toConfirm} onChange={reload} />
+      {/* core details: everything needed at a glance */}
+      <section className="card hero">
+        <div className="hero-top">
+          <span className="avatar" aria-hidden>{initials(person.name)}</span>
+          <div className="hero-name">
+            <h1>{person.name}</h1>
+            <p className="muted small">
+              {person.home_base ?? 'No home base'} · {person.email}
+              {!person.email_confirmed && <> · <span className="flagged">email TO CONFIRM</span></>}
+            </p>
+          </div>
+          {!editingCore && <button className="link" onClick={() => setEditingCore(true)}>Edit</button>}
+        </div>
+        {editingCore ? (
+          <Fields fields={PERSON_FIELDS} values={person as unknown as Record<string, unknown>} onSave={savePerson} editing onEditingChange={setEditingCore} formOnly />
+        ) : (
+          <>
+            {profile && (
+              <div className="chips">
+                <span className={authFlag ? 'chip chip-ask' : 'chip chip-ok'}>
+                  {authFlag ? 'Work authorisation TO CONFIRM' : WORK_AUTH[profile.work_authorization]}
+                </span>
+                <span className="chip">{whereLine(profile)}</span>
+                {profile.employment_types.length > 0 && (
+                  <span className="chip">{profile.employment_types.map((k) => EMPLOYMENT[k] ?? k).join(', ')}</span>
+                )}
+              </div>
+            )}
+            <dl className="stats">
+              <div><dt>Pay</dt><dd>{profile ? <Flagged text={payLine(profile)} /> : '—'}</dd></div>
+              <div><dt>Search</dt><dd>{SCHEDULES[person.schedule] ?? person.schedule}{person.run_at ? ` ${person.run_at.slice(0, 5)}` : ''}</dd></div>
+              <div><dt>Open questions</dt><dd className={open.length ? 'ask-text' : ''}>{open.length}</dd></div>
+              <div><dt>Applications</dt><dd>{live.length}</dd></div>
+              <div><dt>Last sign-in</dt><dd>{shortDate(person.last_sign_in_at) ?? 'Never'}</dd></div>
+              <div><dt>Profile changed</dt><dd>{shortDate(profile?.updated_at ?? null) ?? '—'}</dd></div>
+            </dl>
+            {(folderUrl || docUrl) && (
+              <p className="hero-links small">
+                {folderUrl && <a href={folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}
+                {docUrl && <a href={docUrl} target="_blank" rel="noreferrer">Old profile Doc ↗</a>}
+              </p>
+            )}
+          </>
+        )}
+      </section>
 
       {!profile ? (
         <p className="error">This person has no profile row. Run migrations/0002_profiles.sql.</p>
       ) : (
         <>
-          <Section title="Search rules" fields={RULE_FIELDS} values={profile as unknown as Record<string, unknown>} onSave={saveProfile} />
-          <Section title="What they bring" fields={BRING_FIELDS} values={profile as unknown as Record<string, unknown>} onSave={saveProfile} />
+          <div className="module-bar">
+            <button className="link small" onClick={() => setAllModules(true)}>Expand all</button>
+            <button className="link small" onClick={() => setAllModules(false)}>Collapse all</button>
+          </div>
 
-          <h2 className="group">Job families <span className="count">{families.filter((f) => f.active).length}</span></h2>
-          <p className="muted small">In priority order. The search runs at least one search per active family.</p>
-          {families.map((f, i) => (
-            <Section
-              key={f.id}
-              title={`${f.letter}. ${f.name}`}
-              fields={FAMILY_FIELDS}
-              values={f as unknown as Record<string, unknown>}
-              onSave={saveFamily(f.id)}
-              muted={!f.active}
-              summary={<p className="muted small summary">{f.active ? '' : 'Not searched · '}{f.search_titles.slice(0, 4).join(', ')}{f.search_titles.length > 4 ? '…' : ''}</p>}
-              tools={
-                <>
-                  <button className="link" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
-                  <button className="link" onClick={() => move(i, 1)} disabled={i === families.length - 1} aria-label="Move down">↓</button>
-                </>
-              }
-            />
-          ))}
-          <button className="secondary add" onClick={addFamily}>Add a job family</button>
+          <div className="modules">
+            <div className="col col-main">
+              <Module id="rules" title="Search rules" className="o-2"
+                summary={`${whereLine(profile)} · ${plural(profile.in_range_places.length, 'place')} in range · ${plural(profile.exclusions.length, 'exclusion')}`}>
+                <Fields fields={RULE_FIELDS} values={values} onSave={saveProfile} />
+              </Module>
 
-          <Applications personId={id} items={applications} onChange={reload} />
+              <Module id="bring" title="What they bring" count={profile.facts.length} className="o-3"
+                summary={profile.headline ?? `${plural(profile.facts.length, 'fact')} · ${plural(profile.never_claim.length, 'thing', 'things')} never to claim`}>
+                <Fields fields={BRING_FIELDS} values={values} onSave={saveProfile} />
+              </Module>
 
-          <Section title="Where to search" fields={SOURCE_FIELDS} values={profile as unknown as Record<string, unknown>} onSave={saveProfile} />
-          <Section title="Person" fields={PERSON_FIELDS} values={person as unknown as Record<string, unknown>} onSave={savePerson} />
+              <Module id="families" title="Job families" count={active.length} className="o-4"
+                summary={active.length ? active.map((f) => `${f.letter}. ${f.name}`).join(' · ') : 'None yet'}>
+                <p className="muted small">In priority order. The search runs at least one search per active family.</p>
+                <div className="items-list">
+                  {families.map((f, i) => (
+                    <Item
+                      key={f.id}
+                      title={`${f.letter}. ${f.name}`}
+                      fields={FAMILY_FIELDS}
+                      values={f as unknown as Record<string, unknown>}
+                      onSave={saveFamily(f.id)}
+                      muted={!f.active}
+                      summary={`${f.active ? '' : 'Not searched · '}${f.search_titles.slice(0, 4).join(', ')}${f.search_titles.length > 4 ? '…' : ''}`}
+                      tools={
+                        <>
+                          <button className="link" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${f.name} up`}>↑</button>
+                          <button className="link" onClick={() => move(i, 1)} disabled={i === families.length - 1} aria-label={`Move ${f.name} down`}>↓</button>
+                        </>
+                      }
+                    />
+                  ))}
+                </div>
+                <button className="secondary add" onClick={addFamily}>Add a job family</button>
+              </Module>
+            </div>
+
+            <div className="col col-side">
+              <Module id="confirm" title="To confirm" count={open.length} tone="ask" className="o-1" forceOpen={open.length > 0}
+                summary={open.length ? open.map((t) => t.topic).join(' · ') : 'Nothing open'}>
+                <ToConfirmCard personId={id} items={toConfirm} onChange={reload} />
+              </Module>
+
+              <Module id="applications" title="Applications" count={applications.length} className="o-5"
+                summary={applications.length
+                  ? Object.entries(applications.reduce<Record<string, number>>((m, a) => ({ ...m, [a.status]: (m[a.status] ?? 0) + 1 }), {}))
+                      .map(([k, n]) => `${n} ${(APP_STATUS[k] ?? k).toLowerCase()}`).join(' · ')
+                  : 'None recorded · never suggested again once added'}>
+                <Applications personId={id} items={applications} onChange={reload} />
+              </Module>
+
+              <Module id="sources" title="Where to search" count={profile.sources.length} className="o-6"
+                summary={profile.sources.slice(0, 3).join(' · ') + (profile.sources.length > 3 ? '…' : '')}>
+                <Fields fields={SOURCE_FIELDS} values={values} onSave={saveProfile} />
+              </Module>
+            </div>
+          </div>
 
           <p className="muted small footer">
             Profile last changed {new Date(profile.updated_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}

@@ -32,12 +32,8 @@ export function Applications({ personId, items, onChange }: { personId: string; 
   }
 
   return (
-    <section className="card section">
-      <div className="section-head">
-        <h2 className="section-title">Applications <span className="count">{items.length}</span></h2>
-        {!adding && <button className="link" onClick={() => setAdding(true)}>Add</button>}
-      </div>
-      <p className="muted small">Never suggested again by the daily search.</p>
+    <div>
+      {!adding && <button className="link body-action" onClick={() => setAdding(true)}>Add an application</button>}
       {items.length === 0 && !adding && <p className="muted small">None recorded yet.</p>}
       <ul className="tc-list">
         {items.map((a) => (
@@ -65,6 +61,6 @@ export function Applications({ personId, items, onChange }: { personId: string; 
         </div>
       )}
       {error && <p className="error">{error}</p>}
-    </section>
+    </div>
   )
 }

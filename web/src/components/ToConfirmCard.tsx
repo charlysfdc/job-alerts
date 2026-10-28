@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { ToConfirm } from '../lib/types'
 
-/** Open questions about a person. Never used as search filters; answering one does not change the profile by itself. */
+/** Open questions about a person (the body of the To confirm module). Never used as search filters; answering one does not change the profile by itself. */
 export function ToConfirmCard({ personId, items, onChange }: { personId: string; items: ToConfirm[]; onChange: () => void }) {
   const open = items.filter((t) => !t.resolved_at)
   const answered = items.filter((t) => t.resolved_at)
@@ -39,11 +39,8 @@ export function ToConfirmCard({ personId, items, onChange }: { personId: string;
   }
 
   return (
-    <section className={open.length ? 'card section tc-card' : 'card section'}>
-      <div className="section-head">
-        <h2 className="section-title">To confirm {open.length > 0 && <span className="count count-ask">{open.length}</span>}</h2>
-        {!adding && <button className="link" onClick={() => setAdding(true)}>Add</button>}
-      </div>
+    <div>
+      {!adding && <button className="link body-action" onClick={() => setAdding(true)}>Add a question</button>}
       {open.length === 0 && !adding && <p className="muted small">Nothing open.</p>}
       <ul className="tc-list">
         {open.map((t) => (
@@ -94,6 +91,6 @@ export function ToConfirmCard({ personId, items, onChange }: { personId: string;
           )}
         </>
       )}
-    </section>
+    </div>
   )
 }
