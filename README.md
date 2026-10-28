@@ -70,3 +70,15 @@ Built for a later self sign-up with no coach:
 - `people.coach_email` empty = no coach. Answers to field-linked questions then save straight into the profile.
 - `question_templates` give every new person their starter questions (a database trigger, not the page).
 - Self sign-up mainly means changing `handle_new_user` to create a `people` row instead of refusing unknown accounts.
+
+## Uploading resumes and documents
+People (and admins, for them) upload a PDF, Word or text file. It goes to the private Storage bucket `documents`
+(`<person id>/…`), is recorded with `register_document`, and the edge function `process-document` has Claude
+(`claude-opus-5-5`) compare it with the profile. Claude's findings become `suggestions` (new fact, updated fact,
+headline, new job family) and, where the document and the profile disagree, TO CONFIRM questions. Nothing reaches the
+profile until a suggestion is accepted with `decide_suggestion`: by an admin, or by the person when they have no coach.
+
+The function needs the secret `ANTHROPIC_API_KEY` (Supabase > Edge Functions > Secrets). It deploys from
+`.github/workflows/deploy-functions.yml` once the repository secret `SUPABASE_ACCESS_TOKEN` is set; until then, paste
+`supabase/functions/process-document/index.ts` into the dashboard editor (JWT verification off: the function checks
+sign-in itself).
