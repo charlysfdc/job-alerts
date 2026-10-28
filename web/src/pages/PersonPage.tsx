@@ -6,9 +6,10 @@ import { Fields, Flagged, Item, type Field } from '../components/Section'
 import { Module, setAllModules } from '../components/Module'
 import { ToConfirmCard } from '../components/ToConfirmCard'
 import { Applications } from '../components/Applications'
+import { Requests } from '../components/Requests'
 import {
   APP_STATUS, EMPLOYMENT, REMOTE, SCHEDULES, WORK_AUTH,
-  type Application, type JobFamily, type Person, type Profile, type ToConfirm,
+  type Application, type JobFamily, type Person, type Profile, type Request, type ToConfirm,
 } from '../lib/types'
 
 const PERSON_FIELDS: Field[] = [
@@ -67,17 +68,19 @@ interface Loaded {
   families: JobFamily[]
   applications: Application[]
   toConfirm: ToConfirm[]
+  requests: Request[]
 }
 
 async function load(id: string): Promise<Loaded> {
-  const [p, pr, f, a, t] = await Promise.all([
+  const [p, pr, f, a, t, r] = await Promise.all([
     supabase.from('people').select('*').eq('id', id).single(),
     supabase.from('profiles').select('*').eq('person_id', id).maybeSingle(),
     supabase.from('job_families').select('*').eq('person_id', id).order('position'),
     supabase.from('applications').select('*').eq('person_id', id).order('created_at'),
     supabase.from('to_confirm').select('*').eq('person_id', id).order('created_at'),
+    supabase.from('requests').select('*').eq('person_id', id).order('created_at', { ascending: false }),
   ])
-  const err = p.error ?? pr.error ?? f.error ?? a.error ?? t.error
+  const err = p.error ?? pr.error ?? f.error ?? a.error ?? t.error ?? r.error
   if (err) throw new Error(err.message)
   return {
     person: p.data as Person,
@@ -85,6 +88,7 @@ async function load(id: string): Promise<Loaded> {
     families: (f.data as JobFamily[]) ?? [],
     applications: (a.data as Application[]) ?? [],
     toConfirm: (t.data as ToConfirm[]) ?? [],
+    requests: (r.data as Request[]) ?? [],
   }
 }
 
@@ -132,7 +136,7 @@ export function PersonPage() {
 
   if (error) return <main><Link className="back" to="/">‹ People</Link><p className="error">{error}</p></main>
   if (!data) return <main><p className="muted">Loading…</p></main>
-  const { person, profile, families, applications, toConfirm } = data
+  const { person, profile, families, applications, toConfirm, requests } = data
 
   const done = (e: { message: string } | null) => {
     if (e) return e.message
@@ -164,6 +168,9 @@ export function PersonPage() {
   const docUrl = profile?.source_doc_id ? `https://docs.google.com/document/d/${profile.source_doc_id}/edit` : null
   const folderUrl = person.drive_folder_id ? `https://drive.google.com/drive/folders/${person.drive_folder_id}` : null
   const open = toConfirm.filter((t) => !t.resolved_at)
+  const fromThem = open.filter((t) => t.answered_at)
+  const openRequests = requests.filter((r) => !r.resolved_at)
+  const firstName = person.name.split(' ')[0]
   const active = families.filter((f) => f.active)
   const live = applications.filter((a) => a.status !== 'closed')
   const values = profile as unknown as Record<string, unknown>
@@ -184,7 +191,12 @@ export function PersonPage() {
               {!person.email_confirmed && <> · <span className="flagged">email TO CONFIRM</span></>}
             </p>
           </div>
-          {!editingCore && <button className="link" onClick={() => setEditingCore(true)}>Edit</button>}
+          {!editingCore && (
+            <span className="hero-actions">
+              <Link to={`/person/${id}/view`} className="link">See their view</Link>
+              <button className="link" onClick={() => setEditingCore(true)}>Edit</button>
+            </span>
+          )}
         </div>
         {editingCore ? (
           <Fields fields={PERSON_FIELDS} values={person as unknown as Record<string, unknown>} onSave={savePerson} editing onEditingChange={setEditingCore} formOnly />
@@ -268,8 +280,15 @@ export function PersonPage() {
 
             <div className="col col-side">
               <Module id="confirm" title="To confirm" count={open.length} tone="ask" className="o-1" forceOpen={open.length > 0}
-                summary={open.length ? open.map((t) => t.topic).join(' · ') : 'Nothing open'}>
-                <ToConfirmCard personId={id} items={toConfirm} onChange={reload} />
+                summary={open.length
+                  ? `${fromThem.length ? `${fromThem.length} answered by ${firstName} · ` : ''}${open.filter((t) => !t.answered_at).map((t) => t.topic).join(' · ')}`
+                  : 'Nothing open'}>
+                <ToConfirmCard personId={id} firstName={firstName} items={toConfirm} onChange={reload} />
+              </Module>
+
+              <Module id="messages" title={`Messages from ${firstName}`} count={openRequests.length} tone="ask" className="o-1" forceOpen={openRequests.length > 0}
+                summary={openRequests.length ? openRequests.map((r) => r.section).join(' · ') : 'None waiting'}>
+                <Requests items={requests} onChange={reload} />
               </Module>
 
               <Module id="applications" title="Applications" count={applications.length} className="o-5"

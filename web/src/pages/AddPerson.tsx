@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 
 /** Folder links look like https://drive.google.com/drive/folders/<id>?usp=… ; keep only the id. */
 function folderId(s: string): string | null {
@@ -12,6 +13,7 @@ function folderId(s: string): string | null {
 
 export function AddPerson() {
   const navigate = useNavigate()
+  const { me } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [homeBase, setHomeBase] = useState('')
@@ -25,19 +27,14 @@ export function AddPerson() {
     setError(null)
     const { data, error: e } = await supabase
       .from('people')
-      .insert({ name: name.trim(), email: email.trim().toLowerCase(), email_confirmed: true, home_base: homeBase.trim() || null, drive_folder_id: folderId(folder) })
+      .insert({ name: name.trim(), email: email.trim().toLowerCase(), email_confirmed: true, coach_email: me?.email ?? null, home_base: homeBase.trim() || null, drive_folder_id: folderId(folder) })
       .select('id')
       .single()
     if (e || !data) {
       setSaving(false)
       return setError(e?.message ?? 'Could not add them.')
     }
-    // Every new person starts with the questions the search cannot run well without.
-    await supabase.from('to_confirm').insert([
-      { person_id: data.id, topic: 'Work authorisation', question: 'US citizen, green card holder, on a work permit (EAD), or needs sponsorship?' },
-      { person_id: data.id, topic: 'Pay floor', question: 'What is their minimum salary or hourly rate?' },
-      { person_id: data.id, topic: 'Commute and remote', question: 'How far will they drive each day, and do they want remote work?' },
-    ])
+    // the database gives every new person an empty profile and the starter questions (question_templates)
     navigate(`/person/${data.id}`)
   }
 
@@ -45,7 +42,7 @@ export function AddPerson() {
     <main>
       <Link className="back" to="/">‹ People</Link>
       <h1>Add a person</h1>
-      <p className="muted small">They can sign in with this Gmail address as soon as you save. Fill in their profile on the next page.</p>
+      <p className="muted small">They can sign in with this Gmail address as soon as you save. You'll be their coach. They get three starter questions in the app; fill in the rest of their profile on the next page.</p>
       <div className="card form">
         <label className="field"><span className="field-label">Name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="field"><span className="field-label">Gmail address they sign in with</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></label>

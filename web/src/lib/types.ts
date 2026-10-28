@@ -1,5 +1,6 @@
 export interface Person {
   id: string
+  coach_email: string | null
   name: string
   email: string
   email_confirmed: boolean
@@ -71,6 +72,23 @@ export interface ToConfirm {
   answer: string | null
   resolved_at: string | null
   created_at: string
+  ask_person: boolean
+  person_question: string | null
+  field: string | null
+  answer_kind: 'text' | 'yesno' | 'number' | 'choice'
+  choices: string[]
+  answered_at: string | null
+  answered_by: string | null
+}
+
+export interface Request {
+  id: string
+  person_id: string
+  section: string
+  message: string
+  created_at: string
+  resolved_at: string | null
+  resolved_by: string | null
 }
 
 export const SCHEDULES: Record<string, string> = {
