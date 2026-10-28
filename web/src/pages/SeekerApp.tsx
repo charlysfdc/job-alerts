@@ -2,11 +2,12 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import {
-  addMyApplication, answerQuestion, coachName, isOpen, sendRequest, useSeekerView,
+  TRACKS, addMyApplication, answerQuestion, coachName, isOpen, sendRequest, useSeekerView,
   type Question, type SeekerView,
 } from '../lib/seeker'
 import { APP_STATUS, EMPLOYMENT, WORK_AUTH } from '../lib/types'
-import { DocumentList, SuggestionList, UploadButton } from '../components/Documents'
+import { CheckProfileButton, DocumentList, SuggestionList, UploadButton } from '../components/Documents'
+import { FactText } from '../components/FactText'
 
 interface Ctx {
   view: SeekerView
@@ -102,7 +103,9 @@ function Home({ view, base, reload, preview }: Ctx) {
         </div>
         <p className="muted small">What we look for, and how we describe you on your resumes.</p>
         <div className="chips">
-          {p.families.map((f) => <span key={f.name} className="chip">{f.name}</span>)}
+          {p.families.map((f) => (
+            <span key={f.name} className={f.track === 'asap' ? 'chip chip-asap' : 'chip'} title={TRACKS[f.track ?? 'long_term'].label}>{f.name}</span>
+          ))}
         </div>
         <p className="small">{whereText(view)}</p>
         <p className="muted small">
@@ -242,11 +245,11 @@ function AnswerCard({ q, view, reload, preview }: { q: Question; view: SeekerVie
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
-  const send = async () => {
-    if (!value.trim()) return setError('Write an answer first.')
+  const send = async (answer = value) => {
+    if (!answer.trim()) return setError('Write an answer first.')
     if (preview) return setError(PREVIEW_NOTE(view))
     setSending(true)
-    const e = await answerQuestion(q.id, value)
+    const e = await answerQuestion(q.id, answer)
     setSending(false)
     if (e) setError(e)
     else reload()
@@ -279,7 +282,11 @@ function AnswerCard({ q, view, reload, preview }: { q: Question; view: SeekerVie
         <textarea rows={3} value={value} onChange={(e) => { setValue(e.target.value); setError(null) }} aria-label={q.question} />
       )}
       {error && <p className="error small">{error}</p>}
-      <button className="primary small-btn" onClick={send} disabled={sending}>{sending ? 'Sending…' : 'Send'}</button>
+      <div className="actions">
+        <button className="primary small-btn" onClick={() => send()} disabled={sending}>{sending ? 'Sending…' : 'Send'}</button>
+        {q.metric && <button className="secondary" onClick={() => send('not sure')} disabled={sending}>I'm not sure</button>}
+      </div>
+      {q.metric && <p className="field-hint">An estimate is fine. "I'm not sure" leaves this part out of your resume.</p>}
     </section>
   )
 }
@@ -311,17 +318,22 @@ function Profile({ view, base, reload, preview }: Ctx) {
 
       <section className="card section">
         <h2 className="section-title">What we look for</h2>
-        <h3 className="sub">Kinds of jobs</h3>
-        <ul className="plain">
-          {p.families.map((f, i) => (
-            <li key={f.name}>
-              <button className="family" onClick={() => setOpenFamily(openFamily === i ? null : i)} aria-expanded={openFamily === i}>
-                <span>{f.name}</span><span className="muted" aria-hidden>{openFamily === i ? '−' : '+'}</span>
-              </button>
-              {openFamily === i && <p className="muted small family-titles">For example: {f.titles.join(', ')}</p>}
-            </li>
-          ))}
-        </ul>
+        {(['asap', 'long_term'] as const).filter((t) => p.families.some((f) => (f.track ?? 'long_term') === t)).map((t) => (
+          <div key={t}>
+            <h3 className="sub">{TRACKS[t].label}</h3>
+            <p className="muted small track-hint">{TRACKS[t].hint}</p>
+            <ul className="plain">
+              {p.families.map((f, i) => (f.track ?? 'long_term') !== t ? null : (
+                <li key={f.name}>
+                  <button className="family" onClick={() => setOpenFamily(openFamily === i ? null : i)} aria-expanded={openFamily === i}>
+                    <span>{f.name}</span><span className="muted" aria-hidden>{openFamily === i ? '−' : '+'}</span>
+                  </button>
+                  {openFamily === i && <p className="muted small family-titles">For example: {f.titles.join(', ')}</p>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
         <h3 className="sub">Where</h3>
         <p>{whereText(view)}</p>
         {p.in_range_places.length > 0 && (
@@ -349,7 +361,7 @@ function Profile({ view, base, reload, preview }: Ctx) {
         </p>
         {p.headline && <p className="headline">{p.headline}</p>}
         <ul className="items">
-          {p.facts.map((f, i) => <li key={i}>{f}</li>)}
+          {p.facts.map((f, i) => <li key={i}><FactText text={f} /></li>)}
         </ul>
         <Tell section="How we describe you" view={view} reload={reload} preview={preview} />
       </section>
@@ -360,6 +372,7 @@ function Profile({ view, base, reload, preview }: Ctx) {
         <SuggestionList items={view.suggestions} canDecide={view.can_decide && !preview} waitingFor={coachName(view)} onChange={reload} />
         <DocumentList docs={view.documents} onChange={reload} />
         <UploadButton personId={view.person.id} disabledNote={preview ? PREVIEW_NOTE(view) : undefined} onDone={() => reload()} />
+        <CheckProfileButton personId={view.person.id} disabledNote={preview ? PREVIEW_NOTE(view) : undefined} onDone={reload} />
       </section>
 
       {view.requests.length > 0 && (

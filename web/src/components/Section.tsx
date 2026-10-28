@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { FactText } from './FactText'
 
 /** A field in an editable section. "lines" = one item per line; "paragraphs" = items separated by a blank line. */
 export type Field =
@@ -38,11 +39,9 @@ function fromDraft(f: Field, d: Draft): unknown {
   }
 }
 
-/** The words TO CONFIRM stand out wherever an open question sits inside longer text. */
+/** The words TO CONFIRM and any [[gaps]] stand out wherever they sit inside longer text. */
 export function Flagged({ text }: { text: string }) {
-  const parts = text.split(/(TO CONFIRM(?: WITH [A-Z]+)?)/i)
-  if (parts.length === 1) return <>{text}</>
-  return <>{parts.map((p, i) => (i % 2 ? <span key={i} className="flagged">{p}</span> : p))}</>
+  return <FactText text={text} />
 }
 
 function View({ f, v }: { f: Field; v: unknown }) {

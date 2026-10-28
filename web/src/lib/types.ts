@@ -52,6 +52,7 @@ export interface JobFamily {
   gaps: string[]
   pay_seen: string | null
   notes: string | null
+  track: 'asap' | 'long_term'
 }
 
 export interface Application {

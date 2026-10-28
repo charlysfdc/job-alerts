@@ -8,6 +8,7 @@ const FIELD_LABELS: Record<string, string> = {
   pay_floor_annual: 'Pay floor, yearly',
   pay_floor_hourly: 'Pay floor, hourly',
   max_commute_minutes: 'Longest daily drive',
+  fact_metric: 'the fact',
 }
 
 const shown = (t: ToConfirm) => (t.answer_kind === 'choice' && t.answer ? WORK_AUTH[t.answer] ?? t.answer : t.answer ?? '')

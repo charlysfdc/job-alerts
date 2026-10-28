@@ -1,5 +1,6 @@
-// process-document: Claude reads an uploaded resume or document and suggests profile updates.
-// Body: { document_id }. The caller must be an admin, or the person the document belongs to.
+// process-document: the Charly Resume Method, run by Claude.
+// Body: { document_id } to read an uploaded resume or document, or { person_id, review: true } to check the profile
+// itself without a document. The caller must be an admin, or the person concerned.
 // Writes `suggestions` (new facts, changed facts, headline, job families) and, for anything the document and the
 // profile disagree on, a TO CONFIRM question for the person. Nothing touches the profile itself: suggestions are
 // accepted one by one in the app (decide_suggestion).
@@ -31,78 +32,123 @@ function admin(): SupabaseClient {
 
 // ---- what Claude returns ---------------------------------------------------------
 
+interface Metric { placeholder: string; question: string }
 interface Findings {
-  kind: 'resume' | 'linkedin' | 'certificate' | 'other'
+  kind: 'resume' | 'linkedin' | 'certificate' | 'other' | 'profile'
   belongs_to_person: boolean
   summary: string
   headline: string | null
-  new_facts: { text: string; reason: string }[]
-  changed_facts: { number: number; proposed: string; reason: string }[]
-  families: { name: string; why: string; search_titles: string[] }[]
+  new_facts: { text: string; reason: string; metrics: Metric[] }[]
+  changed_facts: { number: number; proposed: string; reason: string; metrics: Metric[] }[]
+  rewrites: { number: number; proposed: string; reason: string; metrics: Metric[] }[]
+  families: { name: string; why: string; track: 'asap' | 'long_term'; search_titles: string[] }[]
   conflicts: { topic: string; question_for_person: string }[]
+  flags: { kind: 'remove' | 'translate' | 'spelling' | 'format'; found: string; fix: string }[]
+}
+
+const METRIC = {
+  type: 'object', additionalProperties: false, required: ['placeholder', 'question'],
+  properties: { placeholder: { type: 'string' }, question: { type: 'string' } },
+}
+const FACT_EDIT = {
+  type: 'object', additionalProperties: false, required: ['number', 'proposed', 'reason', 'metrics'],
+  properties: { number: { type: 'integer' }, proposed: { type: 'string' }, reason: { type: 'string' }, metrics: { type: 'array', items: METRIC } },
 }
 
 const SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['kind', 'belongs_to_person', 'summary', 'headline', 'new_facts', 'changed_facts', 'families', 'conflicts'],
+  required: ['kind', 'belongs_to_person', 'summary', 'headline', 'new_facts', 'changed_facts', 'rewrites', 'families', 'conflicts', 'flags'],
   properties: {
-    kind: { type: 'string', enum: ['resume', 'linkedin', 'certificate', 'other'] },
+    kind: { type: 'string', enum: ['resume', 'linkedin', 'certificate', 'other', 'profile'] },
     belongs_to_person: { type: 'boolean' },
     summary: { type: 'string' },
     headline: { type: ['string', 'null'] },
     new_facts: {
       type: 'array',
-      items: { type: 'object', additionalProperties: false, required: ['text', 'reason'],
-        properties: { text: { type: 'string' }, reason: { type: 'string' } } },
+      items: { type: 'object', additionalProperties: false, required: ['text', 'reason', 'metrics'],
+        properties: { text: { type: 'string' }, reason: { type: 'string' }, metrics: { type: 'array', items: METRIC } } },
     },
-    changed_facts: {
-      type: 'array',
-      items: { type: 'object', additionalProperties: false, required: ['number', 'proposed', 'reason'],
-        properties: { number: { type: 'integer' }, proposed: { type: 'string' }, reason: { type: 'string' } } },
-    },
+    changed_facts: { type: 'array', items: FACT_EDIT },
+    rewrites: { type: 'array', items: FACT_EDIT },
     families: {
       type: 'array',
-      items: { type: 'object', additionalProperties: false, required: ['name', 'why', 'search_titles'],
-        properties: { name: { type: 'string' }, why: { type: 'string' }, search_titles: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', additionalProperties: false, required: ['name', 'why', 'track', 'search_titles'],
+        properties: { name: { type: 'string' }, why: { type: 'string' }, track: { type: 'string', enum: ['asap', 'long_term'] },
+          search_titles: { type: 'array', items: { type: 'string' } } } },
     },
     conflicts: {
       type: 'array',
       items: { type: 'object', additionalProperties: false, required: ['topic', 'question_for_person'],
         properties: { topic: { type: 'string' }, question_for_person: { type: 'string' } } },
     },
+    flags: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: false, required: ['kind', 'found', 'fix'],
+        properties: { kind: { type: 'string', enum: ['remove', 'translate', 'spelling', 'format'] }, found: { type: 'string' }, fix: { type: 'string' } } },
+    },
   },
 } as const
 
-const SYSTEM = `You help job seekers keep their job-search profile up to date. The profile's facts are the ONLY facts \
+const SYSTEM = `You are a resume coach working the Charly Resume Method: helping people from South Africa (and \
+elsewhere) turn their CVs into strong, honest US resumes. Each person has a profile whose facts are the ONLY facts \
 allowed on the resumes and cover letters written for them, so accuracy matters more than anything else.
 
-You get the person's current profile and a document they uploaded (usually a resume). Compare them and report:
+You get the person's current profile and either a document they uploaded (usually a resume) or, with no document, \
+the profile alone to check. Report:
 
-- kind: what the document is.
-- belongs_to_person: false if the document is clearly about someone else (a different name).
-- summary: one plain sentence for the person, e.g. "Your 2025 resume: 2 new things and 1 update."
-- headline: a one or two sentence professional headline copied or closely condensed from the document, only if the \
-profile has none or the document's is clearly newer. Otherwise null.
+- kind: what the document is ("profile" when there is no document).
+- belongs_to_person: false if the document is clearly about someone else (a different name). True when there is no document.
+- summary: one plain sentence for the person, e.g. "Your 2025 resume: 2 new things, 3 accomplishment rewrites and 4 things to fix."
+- headline: a 2 to 3 sentence professional summary (years of experience, core domain, top value), only from facts \
+given, if the profile has none or the document's is clearly better. Otherwise null.
 - new_facts: experience, roles, certifications, education, skills or achievements in the document that no current \
-fact covers. Write each like the existing facts: one self-contained paragraph per role or topic, starting with the \
-employer or topic, then title, dates and place, then what they did, in the document's own words. Never merge two \
-roles into one fact.
-- changed_facts: a current fact (by its number) that the document shows is out of date or incomplete. "proposed" is \
-the full replacement paragraph: keep everything still true from the current fact and add or correct only what the \
-document supports.
-- families: kinds of jobs worth searching that the profile's job families don't cover yet, with 4 to 8 job titles \
-each. Only when the document gives clear evidence. Usually an empty list.
-- conflicts: where the document and the profile disagree and you cannot tell which is right (different titles, \
-dates, numbers), or where the document claims something on the profile's never-claim list. Ask the person a short, \
-friendly question in plain English, addressed to them as "you". Never resolve a conflict yourself.
+fact covers. One self-contained paragraph per role or topic: employer or topic first, then title, dates and place, \
+then accomplishments.
+- changed_facts: a current fact (by number) that the document shows is out of date or incomplete. "proposed" is the \
+full replacement paragraph.
+- rewrites: current facts (by number) written as duties ("Responsible for…", "Assisted with…", lists of tasks) that \
+would read stronger as accomplishments. Duties tell, accomplishments sell: Action verb + what they did (scope, \
+scale, tools) + the result. Use only what the fact or document says. Where a number would make it stronger \
+(people served, team size, volume, budget, acres, percent improved), write a gap as [[phrase with __]], e.g. \
+"[[serving about __ guests a year]]", where __ is where their number goes and the phrase still reads well if it is \
+removed. At most 3 gaps per fact, and add one metric per gap: the exact placeholder text including the brackets, and \
+a short friendly question to the person ("About how many guests did KaalvoetKoppies host in a year?"). Skip facts \
+that already read as accomplishments. Never rewrite more than 5 facts at once.
+- families: kinds of jobs worth searching that the profile's job families don't cover yet, 4 to 8 job titles each, \
+with track "asap" for bridge jobs they could start soon for income and US references (retail, warehouse, front \
+desk, customer service, hospitality) or "long_term" for their real career path. Only with clear evidence; usually \
+an empty list.
+- conflicts: where the document and the profile disagree and you cannot tell which is right, where the document \
+claims something on the never-claim list, or where a South African qualification is presented as a US degree without \
+an evaluation (WES, SpanTran, ECE). Ask a short, friendly question in plain English, addressed to the person as \
+"you". Never resolve a conflict yourself.
+- flags: what the Method says to fix in the DOCUMENT itself (empty when there is no document):
+  - remove: photo or headshot, ID or passport numbers, driver's licence codes (e.g. "Code 08"), date of birth or age, \
+gender, marital status, dependents, religion, race or EE status, health, full street address (keep City, State), \
+"Curriculum Vitae" as a heading, "Reason for leaving" lines, a references section or "References available on request".
+  - translate: South African terms a US recruiter or ATS won't know: Matric or Grade 12 or NSC -> High School \
+Diploma; tertiary -> higher education; NQF levels -> the evaluated US equivalent; articles -> audit associate / \
+trainee accountant (or candidate attorney for law); bakkie or LDV -> pickup truck; retrenched -> leave it off; \
+medical aid -> health insurance; provident fund -> retirement plan / 401(k); turnover -> revenue; debtors -> \
+accounts receivable; creditors -> accounts payable; stock take -> inventory audit; shrinkage -> inventory loss; \
+hectares -> acres; rand amounts -> approximate US dollars with the year.
+  - spelling: UK spelling to US (organise -> organize, colour -> color, programme -> program, centre -> center), with \
+the words found.
+  - format: graphics, columns, tables, skill bars or text boxes that break applicant tracking systems; more than 2 \
+pages for a tailored version (a long Master Resume is fine); duties-only bullets.
+  Keep each flag short: "found" is what is in the document, "fix" is what to do.
 
 Rules:
-- Use only what is written in the document or the profile. Never invent or infer employers, dates, numbers, \
-titles, certifications, degrees or achievements. Leave out anything you are unsure of.
+- Use only what is written in the document or the profile. Never invent or infer employers, dates, numbers, titles, \
+certifications, degrees, company sizes or achievements. A number you don't have becomes a [[gap]], never a guess.
+- Write proposed facts in US English with US terms (see translate above). Convert rand only when the document gives \
+an amount, as "about $X (R Y, year)".
+- Keep real job titles exactly. You may add the US meaning in brackets, e.g. "Managing Director (Owner/Operator)".
+- Never call a South African qualification a US degree unless the profile says it was evaluated.
 - Do not suggest a fact that only repeats what a current fact already says.
-- Nothing from the never-claim list may appear in new_facts, changed_facts or headline.
-- Keep reasons short and plain, written to the person ("Your resume adds…").
+- Nothing from the never-claim list may appear in new_facts, changed_facts, rewrites or headline.
+- Keep reasons short and plain, written to the person ("Your resume adds…", "Numbers make this stand out…").
 - If the document is not about the person, return empty lists and explain in summary.`
 
 // ---- reading the file ------------------------------------------------------------
@@ -136,48 +182,63 @@ async function handle(req: Request): Promise<unknown> {
   if (authError || !auth.user) throw new HttpError(401, 'Your sign-in has expired. Sign in again.')
   const email = (auth.user.email ?? '').toLowerCase()
 
-  const body = (await req.json().catch(() => ({}))) as { document_id?: string }
-  if (!body.document_id) throw new HttpError(400, 'No document given.')
+  const body = (await req.json().catch(() => ({}))) as { document_id?: string; person_id?: string; review?: boolean }
+  // deno-lint-ignore no-explicit-any
+  let doc: any = null
+  let personId = body.person_id ?? null
+  if (body.document_id) {
+    const { data } = await db.from('documents').select('*').eq('id', body.document_id).maybeSingle()
+    if (!data) throw new HttpError(404, 'Document not found.')
+    doc = data
+    personId = doc.person_id
+  } else if (!body.review || !personId) {
+    throw new HttpError(400, 'No document given.')
+  }
 
-  const { data: doc } = await db.from('documents').select('*').eq('id', body.document_id).maybeSingle()
-  if (!doc) throw new HttpError(404, 'Document not found.')
-  const { data: person } = await db.from('people').select('id, name, email').eq('id', doc.person_id).single()
+  const { data: person } = await db.from('people').select('id, name, email').eq('id', personId).single()
+  if (!person) throw new HttpError(404, 'Person not found.')
   const { data: isAdmin } = await db.from('admins').select('email').ilike('email', email).maybeSingle()
-  if (!isAdmin && person.email.toLowerCase() !== email) throw new HttpError(403, 'Not your document.')
+  if (!isAdmin && person.email.toLowerCase() !== email) throw new HttpError(403, 'Not your profile.')
 
-  await db.from('documents').update({ status: 'reading', error: null }).eq('id', doc.id)
+  if (doc) await db.from('documents').update({ status: 'reading', error: null }).eq('id', doc.id)
 
   try {
-    const file = await db.storage.from('documents').download(doc.path)
-    if (file.error || !file.data) throw new HttpError(500, 'The file could not be opened.')
-    const bytes = new Uint8Array(await file.data.arrayBuffer())
-
-    const [{ data: profile }, { data: families }] = await Promise.all([
-      db.from('profiles').select('headline, facts, never_claim').eq('person_id', doc.person_id).single(),
-      db.from('job_families').select('name, search_titles').eq('person_id', doc.person_id).order('position'),
+    const [{ data: profile }, { data: families }, { data: pending }] = await Promise.all([
+      db.from('profiles').select('headline, facts, never_claim, education_note').eq('person_id', personId).single(),
+      db.from('job_families').select('name, track, search_titles').eq('person_id', personId).order('position'),
+      db.from('suggestions').select('kind, fact_index').eq('person_id', personId).eq('status', 'pending'),
     ])
 
     const facts: string[] = profile?.facts ?? []
+    // facts already waiting for a decision are not suggested again
+    const busy = new Set((pending ?? []).filter((p) => p.fact_index).map((p) => p.fact_index as number))
     const profileText = [
       `Name: ${person.name}`,
       `Headline: ${profile?.headline ?? '(none)'}`,
+      `Education note: ${profile?.education_note ?? '(none)'}`,
       'Current facts:',
-      ...(facts.length ? facts.map((f, i) => `${i + 1}. ${f}`) : ['(none yet)']),
+      ...(facts.length ? facts.map((f, i) => `${i + 1}. ${f}${busy.has(i + 1) ? ' (an update for this fact is already waiting; skip it)' : ''}`) : ['(none yet)']),
       'Never claim:',
       ...((profile?.never_claim ?? []).length ? profile!.never_claim.map((n: string) => `- ${n}`) : ['(nothing listed)']),
       'Job families searched now:',
-      ...((families ?? []).length ? families!.map((f) => `- ${f.name}: ${(f.search_titles ?? []).slice(0, 4).join(', ')}`) : ['(none yet)']),
+      ...((families ?? []).length ? families!.map((f) => `- ${f.name} (${f.track === 'asap' ? 'bridge job' : 'career path'}): ${(f.search_titles ?? []).slice(0, 4).join(', ')}`) : ['(none yet)']),
     ].join('\n')
 
-    const docBlock: Record<string, unknown> =
-      doc.mime === 'application/pdf'
-        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64(bytes) }, title: doc.filename }
-        : {
-            type: 'text',
-            text: `<document name="${doc.filename}">\n${
-              doc.mime === 'text/plain' ? new TextDecoder().decode(bytes) : await docxText(bytes)
-            }\n</document>`,
-          }
+    // deno-lint-ignore no-explicit-any
+    const content: any[] = []
+    if (doc) {
+      const file = await db.storage.from('documents').download(doc.path)
+      if (file.error || !file.data) throw new HttpError(500, 'The file could not be opened.')
+      const bytes = new Uint8Array(await file.data.arrayBuffer())
+      content.push(
+        doc.mime === 'application/pdf'
+          ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64(bytes) }, title: doc.filename }
+          : { type: 'text', text: `<document name="${doc.filename}">\n${doc.mime === 'text/plain' ? new TextDecoder().decode(bytes) : await docxText(bytes)}\n</document>` },
+      )
+      content.push({ type: 'text', text: `The person's current profile:\n\n${profileText}` })
+    } else {
+      content.push({ type: 'text', text: `There is no document. Check this profile with the Method (rewrites, headline, families, conflicts; flags stay empty):\n\n${profileText}` })
+    }
 
     const client = new Anthropic()
     // fallbacks: 'default' re-runs a declined request on Anthropic's recommended model (beta header below)
@@ -189,29 +250,43 @@ async function handle(req: Request): Promise<unknown> {
       fallbacks: 'default',
       output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
       system: SYSTEM,
-      messages: [{
-        role: 'user',
-        content: [docBlock, { type: 'text', text: `The person's current profile:\n\n${profileText}` }],
-      }],
+      messages: [{ role: 'user', content }],
     }
     const response = await client.beta.messages.create(params)
 
-    if (response.stop_reason === 'refusal') throw new HttpError(422, 'This document could not be read automatically.')
-    if (response.stop_reason === 'max_tokens') throw new HttpError(500, 'The document was too long to finish reading.')
-    const text = response.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('')
+    if (response.stop_reason === 'refusal') throw new HttpError(422, 'This could not be checked automatically.')
+    if (response.stop_reason === 'max_tokens') throw new HttpError(500, 'There was too much to finish reading.')
+    // deno-lint-ignore no-explicit-any
+    const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
     const found = JSON.parse(text) as Findings
 
+    // a gap counts only if its placeholder really is in the proposed text
+    const keep = (proposed: string, metrics: Metric[]) =>
+      (metrics ?? []).filter((m) => m.placeholder.startsWith('[[') && m.placeholder.endsWith(']]') && proposed.includes(m.placeholder))
+
     const rows: Record<string, unknown>[] = []
-    const base = { document_id: doc.id, person_id: doc.person_id }
+    const base = { document_id: doc?.id ?? null, person_id: personId }
+    const fit = (n: number) => n >= 1 && n <= facts.length && !busy.has(n)
     if (found.belongs_to_person) {
       if (found.headline && found.headline.trim() !== (profile?.headline ?? '').trim()) {
         rows.push({ ...base, kind: 'headline', current_text: profile?.headline ?? null, proposed_text: found.headline.trim(),
-          reason: profile?.headline ? 'A newer headline from this document.' : 'Your profile has no headline yet.' })
+          reason: profile?.headline ? 'A stronger summary for the top of your resume.' : 'Your profile has no summary yet.' })
       }
-      for (const f of found.new_facts) rows.push({ ...base, kind: 'fact_new', proposed_text: f.text.trim(), reason: f.reason })
+      for (const f of found.new_facts) {
+        rows.push({ ...base, kind: 'fact_new', proposed_text: f.text.trim(), reason: f.reason, metrics: keep(f.text, f.metrics) })
+      }
+      const seen = new Set<number>()
       for (const c of found.changed_facts) {
-        if (c.number < 1 || c.number > facts.length) continue
-        rows.push({ ...base, kind: 'fact_change', fact_index: c.number, current_text: facts[c.number - 1], proposed_text: c.proposed.trim(), reason: c.reason })
+        if (!fit(c.number) || seen.has(c.number)) continue
+        seen.add(c.number)
+        rows.push({ ...base, kind: 'fact_change', fact_index: c.number, current_text: facts[c.number - 1],
+          proposed_text: c.proposed.trim(), reason: c.reason, metrics: keep(c.proposed, c.metrics) })
+      }
+      for (const r of found.rewrites) {
+        if (!fit(r.number) || seen.has(r.number)) continue
+        seen.add(r.number)
+        rows.push({ ...base, kind: 'fact_rewrite', fact_index: r.number, current_text: facts[r.number - 1],
+          proposed_text: r.proposed.trim(), reason: r.reason, metrics: keep(r.proposed, r.metrics) })
       }
       for (const fam of found.families) rows.push({ ...base, kind: 'family', family: fam, reason: fam.why })
     }
@@ -221,17 +296,23 @@ async function handle(req: Request): Promise<unknown> {
     }
     if (found.belongs_to_person && found.conflicts.length) {
       await db.from('to_confirm').insert(found.conflicts.map((c) => ({
-        person_id: doc.person_id, topic: c.topic.slice(0, 80), question: `From ${doc.filename}: ${c.question_for_person}`,
+        person_id: personId, topic: c.topic.slice(0, 80),
+        question: `${doc ? `From ${doc.filename}` : 'From the Method check'}: ${c.question_for_person}`,
         person_question: c.question_for_person, ask_person: true,
       })))
     }
 
     const summary = found.belongs_to_person ? found.summary : `This looks like someone else's document. ${found.summary}`
-    await db.from('documents').update({ status: 'ready', kind: found.kind, summary, processed_at: new Date().toISOString() }).eq('id', doc.id)
-    return { status: 'ready', summary, suggestions: rows.length, questions: found.belongs_to_person ? found.conflicts.length : 0 }
+    if (doc) {
+      await db.from('documents').update({
+        status: 'ready', kind: found.kind, summary, flags: found.belongs_to_person ? found.flags : [],
+        processed_at: new Date().toISOString(),
+      }).eq('id', doc.id)
+    }
+    return { status: 'ready', summary, suggestions: rows.length, questions: found.belongs_to_person ? found.conflicts.length : 0, flags: found.flags.length }
   } catch (e) {
-    const message = e instanceof HttpError ? e.message : 'Reading the document failed. Try again in a minute.'
-    await db.from('documents').update({ status: 'failed', error: message }).eq('id', doc.id)
+    const message = e instanceof HttpError ? e.message : 'Reading failed. Try again in a minute.'
+    if (doc) await db.from('documents').update({ status: 'failed', error: message }).eq('id', doc.id)
     throw e
   }
 }

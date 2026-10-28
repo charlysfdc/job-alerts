@@ -7,7 +7,7 @@ import { Module, setAllModules } from '../components/Module'
 import { ToConfirmCard } from '../components/ToConfirmCard'
 import { Applications } from '../components/Applications'
 import { Requests } from '../components/Requests'
-import { DocumentList, SuggestionList, UploadButton } from '../components/Documents'
+import { CheckProfileButton, DocumentList, SuggestionList, UploadButton } from '../components/Documents'
 import type { Doc, Suggestion } from '../lib/seeker'
 import {
   APP_STATUS, EMPLOYMENT, REMOTE, SCHEDULES, WORK_AUTH,
@@ -55,6 +55,7 @@ const SOURCE_FIELDS: Field[] = [{ key: 'sources', label: 'Job boards and employe
 const FAMILY_FIELDS: Field[] = [
   { key: 'letter', label: 'Letter', kind: 'text' },
   { key: 'name', label: 'Name', kind: 'text' },
+  { key: 'track', label: 'Track', kind: 'select', options: { long_term: 'Career path', asap: 'Get working now (bridge job)' } },
   { key: 'active', label: 'Searched daily', kind: 'bool' },
   { key: 'why', label: 'Why they fit', kind: 'textarea' },
   { key: 'search_titles', label: 'Search titles', kind: 'lines' },
@@ -268,10 +269,13 @@ export function PersonPage() {
                 <SuggestionList items={suggestions} canDecide waitingFor="" onChange={reload} />
                 <DocumentList docs={documents} onChange={reload} />
                 <UploadButton personId={id} label={`Upload a document for ${firstName}`} onDone={() => reload()} />
+                <CheckProfileButton personId={id} onDone={reload} />
               </Module>
 
               <Module id="families" title="Job families" count={active.length} className="o-4"
-                summary={active.length ? active.map((f) => `${f.letter}. ${f.name}`).join(' · ') : 'None yet'}>
+                summary={active.length
+                  ? `${active.filter((f) => f.track === 'asap').length} bridge, ${active.filter((f) => f.track !== 'asap').length} career · ${active.map((f) => `${f.letter}. ${f.name}`).join(' · ')}`
+                  : 'None yet'}>
                 <p className="muted small">In priority order. The search runs at least one search per active family.</p>
                 <div className="items-list">
                   {families.map((f, i) => (
@@ -282,7 +286,7 @@ export function PersonPage() {
                       values={f as unknown as Record<string, unknown>}
                       onSave={saveFamily(f.id)}
                       muted={!f.active}
-                      summary={`${f.active ? '' : 'Not searched · '}${f.search_titles.slice(0, 4).join(', ')}${f.search_titles.length > 4 ? '…' : ''}`}
+                      summary={`${f.track === 'asap' ? 'Bridge job · ' : ''}${f.active ? '' : 'Not searched · '}${f.search_titles.slice(0, 4).join(', ')}${f.search_titles.length > 4 ? '…' : ''}`}
                       tools={
                         <>
                           <button className="link" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${f.name} up`}>↑</button>

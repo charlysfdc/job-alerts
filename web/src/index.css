@@ -262,3 +262,14 @@ p.card.empty-state { margin-top: 0; }
 .was { font-size: 13px; color: var(--muted); }
 .was summary { cursor: pointer; }
 .todo-review { margin-bottom: 10px; }
+
+/* ---- the Method: gaps, tracks, document checks ---- */
+.gap { background: var(--ask-bg); color: var(--ask); border-radius: 6px; padding: 0 4px; border: 1px dashed var(--ask); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.chip-asap { background: var(--ok-bg); color: var(--ok); }
+.track-hint { margin: -2px 0 4px; }
+.flags { margin-top: 6px; font-size: 14px; }
+.flags summary { cursor: pointer; color: var(--ask); font-weight: 600; }
+.flag-group { margin-top: 6px; }
+.flag-kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); }
+.flags ul { margin: 2px 0 0; padding-left: 18px; }
+.flag-found { font-weight: 600; }

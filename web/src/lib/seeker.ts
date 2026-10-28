@@ -14,7 +14,7 @@ export interface SeekerView {
     pay_floor_hourly: number | null
     headline: string | null
     facts: string[]
-    families: { name: string; titles: string[] }[]
+    families: { name: string; titles: string[]; track: Track }[]
   }
   questions: {
     id: string
@@ -22,6 +22,8 @@ export interface SeekerView {
     question: string
     kind: 'text' | 'yesno' | 'number' | 'choice'
     choices: string[]
+    /** fills a [[gap]] in one of their facts */
+    metric: boolean
     answer: string | null
     answered_at: string | null
     done: boolean
@@ -42,17 +44,27 @@ export interface Doc {
   kind: string | null
   summary: string | null
   error: string | null
+  flags: Flag[]
   created_at: string
 }
+
+export interface Flag {
+  kind: 'remove' | 'translate' | 'spelling' | 'format'
+  found: string
+  fix: string
+}
+
+export type Track = 'asap' | 'long_term'
 
 export interface Suggestion {
   id: string
   document_id: string
-  kind: 'fact_new' | 'fact_change' | 'headline' | 'family'
+  kind: 'fact_new' | 'fact_change' | 'fact_rewrite' | 'headline' | 'family'
   current_text: string | null
   proposed_text: string | null
-  family: { name: string; why: string; search_titles: string[] } | null
+  family: { name: string; why: string; search_titles: string[]; track?: Track } | null
   reason: string | null
+  metrics: { placeholder: string; question: string }[]
 }
 
 export type Question = SeekerView['questions'][number]
@@ -143,4 +155,20 @@ export async function openDocument(path: string): Promise<string | null> {
 export async function decideSuggestion(id: string, accept: boolean): Promise<string | null> {
   const { error } = await supabase.rpc('decide_suggestion', { s_id: id, accept })
   return error?.message ?? null
+}
+
+/** Run the Method on the profile itself (no document): rewrites, summary, kinds of jobs, questions. */
+export async function checkProfile(personId: string): Promise<{ error?: string; summary?: string }> {
+  const run = await supabase.functions.invoke('process-document', { body: { person_id: personId, review: true } })
+  if (run.error) {
+    let message = run.error.message
+    try { message = (await (run.error as unknown as { context?: Response }).context?.json())?.error ?? message } catch { /* keep the generic message */ }
+    return { error: message }
+  }
+  return { summary: (run.data as { summary?: string } | null)?.summary }
+}
+
+export const TRACKS: Record<Track, { label: string; hint: string }> = {
+  asap: { label: 'Get working now', hint: 'Bridge jobs you could start soon, for income and US references.' },
+  long_term: { label: 'Your career path', hint: 'The work you are building towards.' },
 }
