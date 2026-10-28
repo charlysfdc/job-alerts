@@ -246,3 +246,19 @@ p.card.empty-state { margin-top: 0; }
 .todo-grid .question { margin: 0; }
 @media (min-width: 760px) { .todo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
 @media (max-width: 420px) { .stat-n { font-size: 20px; } .stat { padding: 8px 10px; } }
+
+/* ---- documents and suggestions ---- */
+.upload { display: grid; gap: 6px; margin-top: 12px; justify-items: start; }
+.reading { display: flex; align-items: center; gap: 8px; margin: 0; }
+.spinner { width: 14px; height: 14px; border-radius: 999px; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.docs { margin-top: 10px; }
+.doc-name { background: none; border: 0; padding: 0; font-weight: 600; font-size: 15px; color: var(--accent); cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.suggestions { margin: 10px 0 4px; }
+.suggestion { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+.suggestion-kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--ask); }
+.suggestion-text { font-size: 15px; }
+.was { font-size: 13px; color: var(--muted); }
+.was summary { cursor: pointer; }
+.todo-review { margin-bottom: 10px; }

@@ -1,11 +1,12 @@
-import { useState, type MouseEvent } from 'react'
-import { Link, Route, Routes } from 'react-router-dom'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import {
   addMyApplication, answerQuestion, coachName, isOpen, sendRequest, useSeekerView,
   type Question, type SeekerView,
 } from '../lib/seeker'
 import { APP_STATUS, EMPLOYMENT, WORK_AUTH } from '../lib/types'
+import { DocumentList, SuggestionList, UploadButton } from '../components/Documents'
 
 interface Ctx {
   view: SeekerView
@@ -57,7 +58,10 @@ function Home({ view, base, reload, preview }: Ctx) {
   const p = view.profile
   const recent = view.applications.slice(0, 4)
   const leads = 0 // daily leads arrive in phase 2
-  const documents = 0 // tailored resumes and cover letters arrive in phase 3
+  const documents = view.documents.length
+  const toReview = view.can_decide ? view.suggestions.length : 0
+  const openItems = open.length + toReview
+  const [note, setNote] = useState<string | null>(null)
 
   const jump = (id: string) => (e: MouseEvent) => {
     e.preventDefault()
@@ -76,8 +80,8 @@ function Home({ view, base, reload, preview }: Ctx) {
 
       {/* stats bar: every number jumps to its section */}
       <nav className="statbar" aria-label="Your summary">
-        <a href="#todo" onClick={jump('todo')} className={open.length ? 'stat stat-ask' : 'stat'}>
-          <span className="stat-n">{open.length}</span><span className="stat-l">{open.length === 1 ? 'Open item' : 'Open items'}</span>
+        <a href="#todo" onClick={jump('todo')} className={openItems ? 'stat stat-ask' : 'stat'}>
+          <span className="stat-n">{openItems}</span><span className="stat-l">{openItems === 1 ? 'Open item' : 'Open items'}</span>
         </a>
         <a href="#leads" onClick={jump('leads')} className="stat">
           <span className="stat-n">{leads}</span><span className="stat-l">Job leads</span>
@@ -143,14 +147,31 @@ function Home({ view, base, reload, preview }: Ctx) {
         <div className="section-head">
           <h2 className="section-title">Your documents <span className="count">{documents}</span></h2>
         </div>
-        <p className="empty-state">
-          When you tap Interested on a job lead, your tailored resume, cover letter and a step-by-step guide for applying appear here, ready to download.
+        <p className="muted small">
+          Upload your latest resume, a LinkedIn PDF or a certificate, and we update your profile from it. Your tailored resumes and cover letters will appear here too.
         </p>
+        <DocumentList docs={view.documents} onChange={reload} />
+        {view.suggestions.length > 0 && (
+          <p className="small">
+            <Link to={`${base}/profile#updates`}>
+              {view.suggestions.length === 1 ? '1 update' : `${view.suggestions.length} updates`} {view.can_decide ? 'to review ›' : `waiting for ${coach}`}
+            </Link>
+          </p>
+        )}
+        {note && <p className="muted small">{note}</p>}
+        <UploadButton personId={view.person.id} disabledNote={preview ? PREVIEW_NOTE(view) : undefined}
+          onDone={(m) => { if (m) setNote(m); reload() }} />
       </section>
 
       {/* 4. to do */}
       <section className="home-block" id="todo">
-        <h2 className="group">To do <span className={open.length ? 'count count-ask' : 'count'}>{open.length}</span></h2>
+        <h2 className="group">To do <span className={openItems ? 'count count-ask' : 'count'}>{openItems}</span></h2>
+        {toReview > 0 && (
+          <Link to={`${base}/profile#updates`} className="card tile tile-ask todo-review">
+            <span className="tile-title">Review {toReview === 1 ? '1 update' : `${toReview} updates`} from your documents</span>
+            <span className="tile-text">Add or skip each one. Nothing goes on your resumes until you add it.</span>
+          </Link>
+        )}
         {open.length === 0 ? (
           <p className="card empty-state">
             {waiting.length
@@ -277,6 +298,11 @@ function whereText(v: SeekerView) {
 function Profile({ view, base, reload, preview }: Ctx) {
   const p = view.profile
   const [openFamily, setOpenFamily] = useState<number | null>(null)
+  const { hash } = useLocation()
+  // links like /profile#updates land on that section
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [hash])
   const pay = [p.pay_floor_annual ? `$${p.pay_floor_annual.toLocaleString('en-US')} a year` : null, p.pay_floor_hourly ? `$${p.pay_floor_hourly} an hour` : null].filter(Boolean)
   return (
     <main>
@@ -326,6 +352,14 @@ function Profile({ view, base, reload, preview }: Ctx) {
           {p.facts.map((f, i) => <li key={i}>{f}</li>)}
         </ul>
         <Tell section="How we describe you" view={view} reload={reload} preview={preview} />
+      </section>
+
+      <section className="card section" id="updates">
+        <h2 className="section-title">Your resumes and documents</h2>
+        <p className="muted small">Upload a newer resume, a LinkedIn PDF or a certificate. We read it and suggest updates to your profile.</p>
+        <SuggestionList items={view.suggestions} canDecide={view.can_decide && !preview} waitingFor={coachName(view)} onChange={reload} />
+        <DocumentList docs={view.documents} onChange={reload} />
+        <UploadButton personId={view.person.id} disabledNote={preview ? PREVIEW_NOTE(view) : undefined} onDone={() => reload()} />
       </section>
 
       {view.requests.length > 0 && (

@@ -7,6 +7,8 @@ import { Module, setAllModules } from '../components/Module'
 import { ToConfirmCard } from '../components/ToConfirmCard'
 import { Applications } from '../components/Applications'
 import { Requests } from '../components/Requests'
+import { DocumentList, SuggestionList, UploadButton } from '../components/Documents'
+import type { Doc, Suggestion } from '../lib/seeker'
 import {
   APP_STATUS, EMPLOYMENT, REMOTE, SCHEDULES, WORK_AUTH,
   type Application, type JobFamily, type Person, type Profile, type Request, type ToConfirm,
@@ -69,18 +71,22 @@ interface Loaded {
   applications: Application[]
   toConfirm: ToConfirm[]
   requests: Request[]
+  documents: Doc[]
+  suggestions: Suggestion[]
 }
 
 async function load(id: string): Promise<Loaded> {
-  const [p, pr, f, a, t, r] = await Promise.all([
+  const [p, pr, f, a, t, r, d, s] = await Promise.all([
     supabase.from('people').select('*').eq('id', id).single(),
     supabase.from('profiles').select('*').eq('person_id', id).maybeSingle(),
     supabase.from('job_families').select('*').eq('person_id', id).order('position'),
     supabase.from('applications').select('*').eq('person_id', id).order('created_at'),
     supabase.from('to_confirm').select('*').eq('person_id', id).order('created_at'),
     supabase.from('requests').select('*').eq('person_id', id).order('created_at', { ascending: false }),
+    supabase.from('documents').select('*').eq('person_id', id).order('created_at', { ascending: false }),
+    supabase.from('suggestions').select('*').eq('person_id', id).eq('status', 'pending').order('created_at'),
   ])
-  const err = p.error ?? pr.error ?? f.error ?? a.error ?? t.error ?? r.error
+  const err = p.error ?? pr.error ?? f.error ?? a.error ?? t.error ?? r.error ?? d.error ?? s.error
   if (err) throw new Error(err.message)
   return {
     person: p.data as Person,
@@ -89,6 +95,8 @@ async function load(id: string): Promise<Loaded> {
     applications: (a.data as Application[]) ?? [],
     toConfirm: (t.data as ToConfirm[]) ?? [],
     requests: (r.data as Request[]) ?? [],
+    documents: (d.data as Doc[]) ?? [],
+    suggestions: (s.data as Suggestion[]) ?? [],
   }
 }
 
@@ -136,7 +144,7 @@ export function PersonPage() {
 
   if (error) return <main><Link className="back" to="/">‹ People</Link><p className="error">{error}</p></main>
   if (!data) return <main><p className="muted">Loading…</p></main>
-  const { person, profile, families, applications, toConfirm, requests } = data
+  const { person, profile, families, applications, toConfirm, requests, documents, suggestions } = data
 
   const done = (e: { message: string } | null) => {
     if (e) return e.message
@@ -250,6 +258,16 @@ export function PersonPage() {
               <Module id="bring" title="What they bring" count={profile.facts.length} className="o-3"
                 summary={profile.headline ?? `${plural(profile.facts.length, 'fact')} · ${plural(profile.never_claim.length, 'thing', 'things')} never to claim`}>
                 <Fields fields={BRING_FIELDS} values={values} onSave={saveProfile} />
+              </Module>
+
+              <Module id="documents" title="Resumes and documents" count={suggestions.length} tone="ask" className="o-4"
+                forceOpen={suggestions.length > 0}
+                summary={suggestions.length
+                  ? `${suggestions.length} updates to review from ${documents.length === 1 ? '1 document' : `${documents.length} documents`}`
+                  : documents.length ? `${documents.length === 1 ? '1 document' : `${documents.length} documents`} · nothing to review` : 'None uploaded yet'}>
+                <SuggestionList items={suggestions} canDecide waitingFor="" onChange={reload} />
+                <DocumentList docs={documents} onChange={reload} />
+                <UploadButton personId={id} label={`Upload a document for ${firstName}`} onDone={() => reload()} />
               </Module>
 
               <Module id="families" title="Job families" count={active.length} className="o-4"
