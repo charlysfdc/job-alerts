@@ -252,7 +252,7 @@ function AnswerCard({ q, view, reload, preview }: { q: Question; view: SeekerVie
       ) : q.kind === 'number' ? (
         <label className="money">
           <span aria-hidden>$</span>
-          <input inputMode="decimal" value={value} onChange={(e) => { setValue(e.target.value); setError(null) }} aria-label={q.question} placeholder="18" />
+          <input inputMode="decimal" value={value} onChange={(e) => { setValue(e.target.value); setError(null) }} aria-label={q.question} placeholder={/year/i.test(q.question) ? '150000' : '18'} />
         </label>
       ) : (
         <textarea rows={3} value={value} onChange={(e) => { setValue(e.target.value); setError(null) }} aria-label={q.question} />
