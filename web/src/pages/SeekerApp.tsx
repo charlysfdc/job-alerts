@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import {
@@ -49,13 +49,23 @@ function Back({ base }: { base: string }) {
 
 // ---- home -------------------------------------------------------------------
 
-function Home({ view, base, preview }: Ctx) {
+function Home({ view, base, reload, preview }: Ctx) {
   const { signOut } = useAuth()
   const open = view.questions.filter(isOpen)
   const waiting = view.questions.filter((q) => q.answered_at && !q.done)
   const coach = coachName(view)
+  const p = view.profile
+  const recent = view.applications.slice(0, 4)
+  const leads = 0 // daily leads arrive in phase 2
+  const documents = 0 // tailored resumes and cover letters arrive in phase 3
+
+  const jump = (id: string) => (e: MouseEvent) => {
+    e.preventDefault()
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
-    <main>
+    <main className="wide">
       <div className="top">
         <div>
           <p className="eyebrow">AiA Job Alerts</p>
@@ -64,37 +74,103 @@ function Home({ view, base, preview }: Ctx) {
         {!preview && <button className="link" onClick={signOut}>Sign out</button>}
       </div>
 
-      {open.length > 0 ? (
-        <Link to={`${base}/questions`} className="card tile tile-ask">
-          <span className="tile-title">{open.length === 1 ? '1 question' : `${open.length} questions`} from {coach}</span>
-          <span className="tile-text">Your answers help the search find the right jobs for you.</span>
-          <span className="tile-go">Answer ›</span>
-        </Link>
-      ) : waiting.length > 0 ? (
-        <Link to={`${base}/questions`} className="card tile">
-          <span className="tile-title">Thank you for your answers</span>
-          <span className="tile-text">{coach === 'us' ? 'They are saved.' : `${coach} has them and will update your search.`}</span>
-        </Link>
-      ) : null}
+      {/* stats bar: every number jumps to its section */}
+      <nav className="statbar" aria-label="Your summary">
+        <a href="#todo" onClick={jump('todo')} className={open.length ? 'stat stat-ask' : 'stat'}>
+          <span className="stat-n">{open.length}</span><span className="stat-l">{open.length === 1 ? 'Open item' : 'Open items'}</span>
+        </a>
+        <a href="#leads" onClick={jump('leads')} className="stat">
+          <span className="stat-n">{leads}</span><span className="stat-l">Job leads</span>
+        </a>
+        <a href="#applications" onClick={jump('applications')} className="stat">
+          <span className="stat-n">{view.applications.length}</span><span className="stat-l">Applications</span>
+        </a>
+        <a href="#documents" onClick={jump('documents')} className="stat">
+          <span className="stat-n">{documents}</span><span className="stat-l">Documents</span>
+        </a>
+      </nav>
 
-      <div className="card tile">
-        <span className="tile-title">Your job leads</span>
-        <span className="tile-text">Jobs picked for you will show here every morning, best first. Until then they keep arriving by email.</span>
+      {/* 1. profile */}
+      <section className="card section home-block" id="profile">
+        <div className="section-head">
+          <h2 className="section-title">Your profile</h2>
+          <Link to={`${base}/profile`} className="link">View ›</Link>
+        </div>
+        <p className="muted small">What we look for, and how we describe you on your resumes.</p>
+        <div className="chips">
+          {p.families.map((f) => <span key={f.name} className="chip">{f.name}</span>)}
+        </div>
+        <p className="small">{whereText(view)}</p>
+        <p className="muted small">
+          {p.facts.length} parts of your experience go on your resumes. <Link to={`${base}/profile`}>Check them</Link>
+        </p>
+      </section>
+
+      {/* 2. leads and applications side by side */}
+      <div className="two-col">
+        <section className="card section home-block" id="leads">
+          <div className="section-head">
+            <h2 className="section-title">Your job leads <span className="count">{leads}</span></h2>
+          </div>
+          <p className="empty-state">Jobs picked for you will show here every morning, best first, with the closing date. Until then they keep arriving by email.</p>
+        </section>
+
+        <section className="card section home-block" id="applications">
+          <div className="section-head">
+            <h2 className="section-title">Your applications <span className="count">{view.applications.length}</span></h2>
+            <Link to={`${base}/applications`} className="link">{view.applications.length ? 'All ›' : 'Add ›'}</Link>
+          </div>
+          {recent.length ? (
+            <ul className="mini-list">
+              {recent.map((a) => (
+                <li key={a.id}>
+                  <span className="mini-title">{a.title}</span>
+                  <span className="mini-sub">{a.employer} · {APP_STATUS[a.status] ?? a.status}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty-state">None yet. Applied somewhere yourself? Add it so we never suggest it again.</p>
+          )}
+          {view.applications.length > recent.length && (
+            <Link to={`${base}/applications`} className="small">{view.applications.length - recent.length} more ›</Link>
+          )}
+        </section>
       </div>
 
-      <Link to={`${base}/profile`} className="card tile">
-        <span className="tile-title">Your profile</span>
-        <span className="tile-text">What we look for, and how we describe you on your resumes.</span>
-        <span className="tile-go">View ›</span>
-      </Link>
+      {/* 3. documents */}
+      <section className="card section home-block" id="documents">
+        <div className="section-head">
+          <h2 className="section-title">Your documents <span className="count">{documents}</span></h2>
+        </div>
+        <p className="empty-state">
+          When you tap Interested on a job lead, your tailored resume, cover letter and a step-by-step guide for applying appear here, ready to download.
+        </p>
+      </section>
 
-      <Link to={`${base}/applications`} className="card tile">
-        <span className="tile-title">Your applications</span>
-        <span className="tile-text">
-          {view.applications.length ? `${view.applications.length} so far. ` : ''}Applied somewhere yourself? Add it so we never suggest it again.
-        </span>
-        <span className="tile-go">Open ›</span>
-      </Link>
+      {/* 4. to do */}
+      <section className="home-block" id="todo">
+        <h2 className="group">To do <span className={open.length ? 'count count-ask' : 'count'}>{open.length}</span></h2>
+        {open.length === 0 ? (
+          <p className="card empty-state">
+            {waiting.length
+              ? (coach === 'us' ? 'All done. Your answers are saved.' : `All done. ${coach} has your answers and will update your search.`)
+              : 'Nothing to do right now.'}
+          </p>
+        ) : (
+          <>
+            <p className="muted small todo-intro">
+              {coach === 'us' ? 'Your answers go straight into your profile.' : `Questions from ${coach}. Your answers help the search find the right jobs for you.`}
+            </p>
+            <div className="todo-grid">
+              {open.map((q) => <AnswerCard key={q.id} q={q} view={view} reload={reload} preview={preview} />)}
+            </div>
+          </>
+        )}
+        {view.questions.length > open.length && (
+          <Link to={`${base}/questions`} className="small">See your answers ›</Link>
+        )}
+      </section>
 
       <p className="muted small footer">You always apply yourself. We find the jobs and prepare the paperwork.</p>
     </main>
