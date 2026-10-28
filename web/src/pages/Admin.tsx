@@ -1,19 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
+import { SCHEDULES, WORK_AUTH, type Person } from '../lib/types'
 
-interface Person {
-  id: string
-  name: string
-  email: string
-  email_confirmed: boolean
-  home_base: string | null
-  schedule: string
-  run_at: string | null
-  last_sign_in_at: string | null
-}
-
-const SCHEDULES: Record<string, string> = { daily: 'Daily', mon_wed_fri: 'Mon, Wed, Fri', weekly: 'Weekly', paused: 'Paused' }
+type Row = Person & { profiles: { work_authorization: string } | null }
 
 function when(iso: string | null): string {
   if (!iso) return 'Never signed in'
@@ -22,18 +13,22 @@ function when(iso: string | null): string {
 
 export function Admin() {
   const { me, signOut } = useAuth()
-  const [people, setPeople] = useState<Person[] | null>(null)
+  const [people, setPeople] = useState<Row[] | null>(null)
+  const [open, setOpen] = useState<Record<string, number>>({})
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase
-      .from('people')
-      .select('id, name, email, email_confirmed, home_base, schedule, run_at, last_sign_in_at')
-      .order('name')
-      .then(({ data, error: e }) => {
-        if (e) setError(e.message)
-        setPeople((data as Person[] | null) ?? [])
-      })
+    Promise.all([
+      supabase.from('people').select('*, profiles(work_authorization)').order('name'),
+      supabase.from('to_confirm').select('person_id').is('resolved_at', null),
+    ]).then(([p, t]) => {
+      const e = p.error ?? t.error
+      if (e) setError(e.message)
+      setPeople((p.data as Row[] | null) ?? [])
+      const counts: Record<string, number> = {}
+      for (const r of (t.data as { person_id: string }[] | null) ?? []) counts[r.person_id] = (counts[r.person_id] ?? 0) + 1
+      setOpen(counts)
+    })
   }, [])
 
   return (
@@ -50,28 +45,35 @@ export function Admin() {
       {people === null ? (
         <p className="muted">Loading…</p>
       ) : people.length === 0 ? (
-        <p className="empty">Nobody added yet. Run supabase/seed.private.sql in the SQL editor.</p>
+        <p className="empty">Nobody added yet.</p>
       ) : (
         <ul className="list">
-          {people.map((p) => (
-            <li key={p.id} className="row">
-              <span className="row-main">
-                <span className="row-title">{p.name}</span>
-                <span className="row-sub">
-                  <span>{p.home_base ?? 'No home base'}</span>
-                  <span>{SCHEDULES[p.schedule] ?? p.schedule}{p.run_at ? ` ${p.run_at.slice(0, 5)}` : ''}</span>
-                </span>
-                <span className="row-sub">
-                  <span>{p.email}</span>
-                  <span>{when(p.last_sign_in_at)}</span>
-                </span>
-              </span>
-              {!p.email_confirmed && <span className="chip chip-ask">Email to confirm</span>}
-            </li>
-          ))}
+          {people.map((p) => {
+            const auth = p.profiles?.work_authorization ?? 'to_confirm'
+            return (
+              <li key={p.id}>
+                <Link to={`/person/${p.id}`} className="row">
+                  <span className="row-main">
+                    <span className="row-title">{p.name}</span>
+                    <span className="row-sub">
+                      <span>{p.home_base ?? 'No home base'}</span>
+                      <span>{SCHEDULES[p.schedule] ?? p.schedule}{p.run_at ? ` ${p.run_at.slice(0, 5)}` : ''}</span>
+                    </span>
+                    <span className="row-sub">
+                      <span>{auth === 'to_confirm' ? 'Work authorisation TO CONFIRM' : WORK_AUTH[auth]}</span>
+                      <span>{when(p.last_sign_in_at)}</span>
+                    </span>
+                  </span>
+                  {(open[p.id] ?? 0) > 0 && <span className="chip chip-ask">{open[p.id]} to confirm</span>}
+                  {!p.email_confirmed && <span className="chip chip-ask">Email</span>}
+                  <span className="chev" aria-hidden>›</span>
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       )}
-      <p className="muted small footer">Profiles, leads and packs come in the next phases.</p>
+      <Link to="/add" className="button secondary add">Add a person</Link>
     </main>
   )
 }
