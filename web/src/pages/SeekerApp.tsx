@@ -8,6 +8,7 @@ import {
 import { APP_STATUS, EMPLOYMENT, WORK_AUTH } from '../lib/types'
 import { CheckProfileButton, DocumentList, SuggestionList, UploadButton } from '../components/Documents'
 import { FactText } from '../components/FactText'
+import { AdzunaCredit, LeadCard } from '../components/Leads'
 
 interface Ctx {
   view: SeekerView
@@ -39,6 +40,7 @@ export function SeekerApp({ base = '', personId }: { base?: string; personId?: s
         <Route path="questions" element={<Questions {...ctx} />} />
         <Route path="profile" element={<Profile {...ctx} />} />
         <Route path="applications" element={<Applications {...ctx} />} />
+        <Route path="leads" element={<Leads {...ctx} />} />
         <Route path="*" element={<Home {...ctx} />} />
       </Routes>
     </>
@@ -58,7 +60,8 @@ function Home({ view, base, reload, preview }: Ctx) {
   const coach = coachName(view)
   const p = view.profile
   const recent = view.applications.slice(0, 4)
-  const leads = 0 // daily leads arrive in phase 2
+  const leads = view.leads ?? []
+  const topLeads = leads.slice(0, 4)
   const documents = view.documents.length
   const toReview = view.can_decide ? view.suggestions.length : 0
   const openItems = open.length + toReview
@@ -85,7 +88,7 @@ function Home({ view, base, reload, preview }: Ctx) {
           <span className="stat-n">{openItems}</span><span className="stat-l">{openItems === 1 ? 'Open item' : 'Open items'}</span>
         </a>
         <a href="#leads" onClick={jump('leads')} className="stat">
-          <span className="stat-n">{leads}</span><span className="stat-l">Job leads</span>
+          <span className="stat-n">{leads.length}</span><span className="stat-l">Job leads</span>
         </a>
         <a href="#applications" onClick={jump('applications')} className="stat">
           <span className="stat-n">{view.applications.length}</span><span className="stat-l">Applications</span>
@@ -117,9 +120,20 @@ function Home({ view, base, reload, preview }: Ctx) {
       <div className="two-col">
         <section className="card section home-block" id="leads">
           <div className="section-head">
-            <h2 className="section-title">Your job leads <span className="count">{leads}</span></h2>
+            <h2 className="section-title">Your job leads <span className="count">{leads.length}</span></h2>
+            {leads.length > 0 && <Link to={`${base}/leads`} className="link">All ›</Link>}
           </div>
-          <p className="empty-state">Jobs picked for you will show here every morning, best first, with the closing date. Until then they keep arriving by email.</p>
+          {topLeads.length ? (
+            <ul className="leads">
+              {topLeads.map((l) => <LeadCard key={l.id} lead={l} onChange={reload} compact />)}
+            </ul>
+          ) : (
+            <p className="empty-state">{searchNote(view)}</p>
+          )}
+          {leads.length > topLeads.length && (
+            <Link to={`${base}/leads`} className="small">{leads.length - topLeads.length} more ›</Link>
+          )}
+          <AdzunaCredit leads={topLeads} />
         </section>
 
         <section className="card section home-block" id="applications">
@@ -430,6 +444,44 @@ function Tell({ section, view, reload, preview }: { section: string; view: Seeke
         <button className="secondary" onClick={() => setOpen(false)}>Cancel</button>
       </div>
     </div>
+  )
+}
+
+// ---- leads ------------------------------------------------------------------
+
+function searchNote(v: SeekerView) {
+  const last = v.last_search
+  if (!last?.at) return 'Jobs picked for you will show here every morning, best first. Until then they keep arriving by email.'
+  const when = new Date(last.at).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+  return `Nothing new right now. The last search ran ${when}; the next one runs tomorrow morning.`
+}
+
+function Leads({ view, base, reload, preview }: Ctx) {
+  const leads = view.leads ?? []
+  const interested = leads.filter((l) => l.status === 'interested')
+  const fresh = leads.filter((l) => l.status === 'new')
+  const note = preview ? PREVIEW_NOTE(view) : undefined
+  return (
+    <main>
+      <Back base={base} />
+      <h1>Your job leads</h1>
+      <p className="muted">Picked for you from new postings, best first. Open a job to read it and apply on the employer's site. Mark the rest Not for me and we learn what you want.</p>
+      {leads.length === 0 && <p className="card empty-state">{searchNote(view)}</p>}
+      {interested.length > 0 && (
+        <>
+          <h2 className="group">Interested <span className="count">{interested.length}</span></h2>
+          <ul className="leads">{interested.map((l) => <LeadCard key={l.id} lead={l} onChange={reload} disabledNote={note} />)}</ul>
+        </>
+      )}
+      {fresh.length > 0 && (
+        <>
+          <h2 className="group">New <span className="count">{fresh.length}</span></h2>
+          <ul className="leads">{fresh.map((l) => <LeadCard key={l.id} lead={l} onChange={reload} disabledNote={note} />)}</ul>
+        </>
+      )}
+      <AdzunaCredit leads={leads} />
+      <p className="muted small footer">"I applied" adds it to your applications. You always apply yourself.</p>
+    </main>
   )
 }
 

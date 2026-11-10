@@ -7,6 +7,7 @@ import { Module, setAllModules } from '../components/Module'
 import { ToConfirmCard } from '../components/ToConfirmCard'
 import { Applications } from '../components/Applications'
 import { Requests } from '../components/Requests'
+import { SearchRuns } from '../components/SearchRuns'
 import { CheckProfileButton, DocumentList, SuggestionList, UploadButton } from '../components/Documents'
 import type { Doc, Suggestion } from '../lib/seeker'
 import {
@@ -311,6 +312,11 @@ export function PersonPage() {
               <Module id="messages" title={`Messages from ${firstName}`} count={openRequests.length} tone="ask" className="o-1" forceOpen={openRequests.length > 0}
                 summary={openRequests.length ? openRequests.map((r) => r.section).join(' · ') : 'None waiting'}>
                 <Requests items={requests} onChange={reload} />
+              </Module>
+
+              <Module id="search" title="Daily search" className="o-5"
+                summary={`${SCHEDULES[person.schedule] ?? person.schedule}${person.run_at ? ` ${person.run_at.slice(0, 5)}` : ''} · email ${person.email_leads === 'person' ? `to ${firstName}` : person.email_leads === 'off' ? 'off' : 'to you'}`}>
+                <SearchRuns person={person} onSavePerson={savePerson} />
               </Module>
 
               <Module id="applications" title="Applications" count={applications.length} className="o-5"

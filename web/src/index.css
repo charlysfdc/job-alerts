@@ -273,3 +273,22 @@ p.card.empty-state { margin-top: 0; }
 .flag-kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); }
 .flags ul { margin: 2px 0 0; padding-left: 18px; }
 .flag-found { font-weight: 600; }
+
+/* ---- job leads (Phase 2) ---- */
+.leads { list-style: none; margin: 8px 0 6px; padding: 0; display: grid; gap: 10px; }
+.lead { display: grid; gap: 3px; background: var(--bg); border-radius: 12px; padding: 10px 12px; box-shadow: inset 4px 0 0 var(--line); }
+.lead-strong { box-shadow: inset 4px 0 0 var(--ok); }
+.lead-good { box-shadow: inset 4px 0 0 var(--primary); }
+.lead-stretch { box-shadow: inset 4px 0 0 var(--ask); }
+.lead-top { display: flex; gap: 8px; flex-wrap: wrap; }
+.lead-fit, .lead-track { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); }
+.lead-strong .lead-fit { color: var(--ok); }
+.lead-stretch .lead-fit { color: var(--ask); }
+.lead-interested .lead-track:last-child { color: var(--accent); }
+.lead-title { font-weight: 700; color: var(--text); font-size: 16px; }
+a.lead-title:hover { color: var(--accent); }
+.lead-why { font-size: 15px; }
+.lead-concerns { font-size: 14px; color: var(--ask); }
+a.button-link { display: inline-flex; align-items: center; justify-content: center; background: var(--primary); color: var(--primary-text); border-radius: 14px; padding: 11px 18px; font-size: 16px; font-weight: 700; text-decoration: none; }
+.runs { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.runs li { display: grid; gap: 1px; }

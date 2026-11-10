@@ -1,6 +1,8 @@
 export interface Person {
   id: string
   coach_email: string | null
+  /** Who gets the daily email: 'coach' (preview), 'person', or 'off'. */
+  email_leads: 'off' | 'coach' | 'person'
   name: string
   email: string
   email_confirmed: boolean

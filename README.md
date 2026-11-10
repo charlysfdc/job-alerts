@@ -82,3 +82,22 @@ The function needs the secret `ANTHROPIC_API_KEY` (Supabase > Edge Functions > S
 `.github/workflows/deploy-functions.yml` once the repository secret `SUPABASE_ACCESS_TOKEN` is set; until then, paste
 `supabase/functions/process-document/index.ts` into the dashboard editor (JWT verification off: the function checks
 sign-in itself).
+
+## Phase 2: the daily search
+
+The edge function `daily-search` finds new postings for each person, drops the ones their rules rule out
+(posting age, out-of-range places, pay below the floor, citizenship or clearance, kinds of work, jobs they
+already applied for), has Claude judge the rest against their profile and families, and keeps the good ones
+as leads. Seekers see them on their home page and under Job leads (Interested, I applied, Not for me).
+
+- **Sources**, each switched on by its secrets in Supabase > Edge Functions > Secrets:
+  SerpApi Google Jobs (`SERPAPI_KEY`) and Adzuna (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`).
+  Optional: `SERPAPI_PER_RUN` (Google searches per person per run, default 2), `SERPAPI_MONTHLY_LIMIT`
+  (default 240, inside the free 250), `ADZUNA_PER_RUN` (default 6). Families and titles rotate day by day.
+- **Email** via Resend (`RESEND_API_KEY`) from jobs@afrikanerinamerika.com. Per person, the admin page's
+  Daily search panel sets who gets it: the coach (a preview, the default while the old scheduled emails
+  still go out), the person, or nobody. Without the key, leads still arrive in the app.
+- **When**: pg_cron calls the function every 10 minutes (migration 0008); it runs the next person whose
+  `run_at` (Central) has passed and who has not run today. The admin page has Run now.
+- **Deploy**: from the dashboard (or the workflow when `SUPABASE_ACCESS_TOKEN` is set), with
+  "Enforce JWT verification" off: the cron call carries no key, and the function only ever runs people who are due.

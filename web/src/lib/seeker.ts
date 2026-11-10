@@ -34,6 +34,43 @@ export interface SeekerView {
   can_decide: boolean
   documents: Doc[]
   suggestions: Suggestion[]
+  /** New and interested leads from the last three weeks, best first. */
+  leads: Lead[]
+  last_search: { at: string | null; kept: number; status: 'done' | 'failed' } | null
+}
+
+export type LeadStatus = 'new' | 'interested' | 'not_for_me' | 'applied'
+
+export interface Lead {
+  id: string
+  title: string
+  employer: string
+  location: string | null
+  remote: boolean
+  url: string | null
+  posted_at: string | null
+  pay_text: string | null
+  employment_type: string | null
+  family: string | null
+  track: Track | null
+  score: number | null
+  fit: 'strong' | 'good' | 'stretch' | null
+  why: string | null
+  concerns: string[]
+  status: LeadStatus
+  source: 'google_jobs' | 'adzuna'
+  created_at: string
+}
+
+export const FIT_LABEL: Record<NonNullable<Lead['fit']>, string> = {
+  strong: 'Strong match',
+  good: 'Good match',
+  stretch: 'Worth a look',
+}
+
+export async function setLeadStatus(id: string, status: LeadStatus): Promise<string | null> {
+  const { error } = await supabase.rpc('set_lead_status', { l_id: id, new_status: status })
+  return error?.message ?? null
 }
 
 export interface Doc {
