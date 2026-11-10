@@ -265,7 +265,8 @@ async function handle(req: Request): Promise<unknown> {
       (metrics ?? []).filter((m) => m.placeholder.startsWith('[[') && m.placeholder.endsWith(']]') && proposed.includes(m.placeholder))
 
     const rows: Record<string, unknown>[] = []
-    const base = { document_id: doc?.id ?? null, person_id: personId }
+    // every row carries metrics: in a batch insert a missing key becomes null, not the column default
+    const base = { document_id: doc?.id ?? null, person_id: personId, metrics: [] as Metric[] }
     const fit = (n: number) => n >= 1 && n <= facts.length && !busy.has(n)
     if (found.belongs_to_person) {
       if (found.headline && found.headline.trim() !== (profile?.headline ?? '').trim()) {
