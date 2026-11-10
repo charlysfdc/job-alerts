@@ -240,6 +240,15 @@ function ruleOut(p: Posting, profile: any): string | null {
 
 // ---- Claude's judgement ----------------------------------------------------------------
 
+/** What Claude used on one run, saved on the run so the cost per person can be measured (migration 0009). */
+interface Usage {
+  claude_model: string | null
+  claude_input_tokens: number
+  claude_output_tokens: number
+  claude_cache_read_tokens: number
+  claude_cache_write_tokens: number
+}
+
 interface Verdict {
   n: number
   keep: boolean
@@ -320,7 +329,7 @@ function postingText(p: Posting, n: number) {
 }
 
 // deno-lint-ignore no-explicit-any
-async function judge(person: any, profile: any, families: any[], postings: Posting[]): Promise<Verdict[]> {
+async function judge(person: any, profile: any, families: any[], postings: Posting[]): Promise<{ verdicts: Verdict[]; usage: Usage }> {
   const client = new Anthropic()
   // fallbacks: 'default' re-runs a declined request on Anthropic's recommended model (beta header below)
   // deno-lint-ignore no-explicit-any
@@ -341,7 +350,15 @@ async function judge(person: any, profile: any, families: any[], postings: Posti
   if (response.stop_reason === 'max_tokens') throw new Error('Too many postings to judge at once.')
   // deno-lint-ignore no-explicit-any
   const text = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
-  return (JSON.parse(text) as { results: Verdict[] }).results
+  const u = response.usage ?? {}
+  const usage: Usage = {
+    claude_model: response.model ?? null,
+    claude_input_tokens: u.input_tokens ?? 0,
+    claude_output_tokens: u.output_tokens ?? 0,
+    claude_cache_read_tokens: u.cache_read_input_tokens ?? 0,
+    claude_cache_write_tokens: u.cache_creation_input_tokens ?? 0,
+  }
+  return { verdicts: (JSON.parse(text) as { results: Verdict[] }).results, usage }
 }
 
 // ---- email -------------------------------------------------------------------------------
@@ -413,7 +430,7 @@ async function serpUsedThisMonth(db: SupabaseClient): Promise<number> {
   return (data ?? []).reduce((n, r: any) => n + (r.queries ?? []).filter((q: any) => q.source === 'google_jobs').length, 0)
 }
 
-interface RunResult { found: number; fresh: number; kept: number; emailed_to: string | null; notes: string[] }
+interface RunResult { found: number; fresh: number; kept: number; emailed_to: string | null; notes: string[]; usage: Usage | null }
 
 async function runSearch(db: SupabaseClient, personId: string, runId: string, sendMail: boolean): Promise<RunResult> {
   const [{ data: person }, { data: profile }, { data: fams }, { data: apps }, { data: seen }] = await Promise.all([
@@ -506,8 +523,11 @@ async function runSearch(db: SupabaseClient, personId: string, runId: string, se
   toJudge.sort((a, b) => (b[1].posted_at ?? '').localeCompare(a[1].posted_at ?? ''))
   const batch = toJudge.slice(0, MAX_TO_JUDGE)
 
+  let usage: Usage | null = null
   if (batch.length) {
-    const verdicts = await judge(person, profile, families, batch.map(([, p]) => p))
+    const judged = await judge(person, profile, families, batch.map(([, p]) => p))
+    const verdicts = judged.verdicts
+    usage = judged.usage
     const byN = new Map(verdicts.map((v) => [v.n, v]))
     const famTrack = new Map(families.map((f) => [f.name, f.track]))
     batch.forEach(([k, p], i) => {
@@ -542,7 +562,7 @@ async function runSearch(db: SupabaseClient, personId: string, runId: string, se
     }
   }
   if (toJudge.length > MAX_TO_JUDGE) notes.push(`${toJudge.length - MAX_TO_JUDGE} more postings wait for the next run.`)
-  return { found: all.length, fresh: fresh.size, kept: kept.length, emailed_to: emailedTo, notes }
+  return { found: all.length, fresh: fresh.size, kept: kept.length, emailed_to: emailedTo, notes, usage }
 }
 
 async function finish(db: SupabaseClient, runId: string, work: Promise<RunResult>) {
@@ -552,6 +572,11 @@ async function finish(db: SupabaseClient, runId: string, work: Promise<RunResult
       status: 'done', finished_at: new Date().toISOString(), found: r.found, fresh: r.fresh, kept: r.kept,
       emailed_to: r.emailed_to, error: r.notes.length ? r.notes.join(' ') : null,
     }).eq('id', runId)
+    // saved separately so a database without migration 0009 still records the run itself
+    if (r.usage) {
+      const { error } = await db.from('runs').update(r.usage).eq('id', runId)
+      if (error) console.warn(`Claude usage not saved (run migration 0009): ${error.message}`)
+    }
     return r
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)

@@ -99,5 +99,7 @@ as leads. Seekers see them on their home page and under Job leads (Interested, I
   still go out), the person, or nobody. Without the key, leads still arrive in the app.
 - **When**: pg_cron calls the function every 10 minutes (migration 0008); it runs the next person whose
   `run_at` (Central) has passed and who has not run today. The admin page has Run now.
+- **Cost**: each run saves the Claude tokens it used (migration 0009). In the SQL editor,
+  `select * from claude_cost_by_person;` shows the Claude cost per person per month at list price.
 - **Deploy**: from the dashboard (or the workflow when `SUPABASE_ACCESS_TOKEN` is set), with
   "Enforce JWT verification" off: the cron call carries no key, and the function only ever runs people who are due.
